@@ -82,11 +82,12 @@ drift are packages instead of copies:
 
 | Package | What it holds |
 |---|---|
-|  | The rules: vocabulary correction, word scoring, prompt budget, transcription orchestration, ffmpeg. No Electron, no server, no UI. |
-|  | The screen. Talks to the system through an injected adapter and takes its strings as a prop, so the same component runs in English here and in Portuguese there. |
-|  | This app's shell: IPC handlers, storage, OS keystore, windows, global shortcut. |
+| `@stalkier/core` | The rules: vocabulary correction, word scoring, prompt budget, transcription orchestration, ffmpeg. No Electron, no server, no UI. |
+| `@stalkier/ui` | The screen. Talks to the system through an injected adapter and takes its strings as a prop, so the same component runs in English here and in Portuguese there. |
+| `src/` | This app's shell: IPC handlers, storage, OS keystore, windows, global shortcut. |
 
-A second shell only implements  and passes a string dictionary.
+A second shell only implements `RecorderApi` and passes a string dictionary.
+Nothing in `core` or `ui` knows which one is mounting it.
 
 ## Security
 
