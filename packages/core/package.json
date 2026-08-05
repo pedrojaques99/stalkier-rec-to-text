@@ -1,0 +1,21 @@
+{
+  "name": "@stalkier/core",
+  "version": "0.1.0",
+  "description": "Shared voice-to-text logic: vocabulary correction, word scoring, transcription and ffmpeg helpers. No Electron, no server, no UI.",
+  "license": "MIT",
+  "_comment": "CommonJS de propósito: quem consome do outro lado é um backend Node em CJS (require) e o processo principal do Electron. Bundler moderno lê CJS sem reclamar; o contrário não é verdade.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "fastest-levenshtein": "^1.0.16",
+    "stopword": "^3.1.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

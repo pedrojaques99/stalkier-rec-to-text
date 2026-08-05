@@ -30,15 +30,14 @@
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
-    "build": "npm run typecheck && electron-vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "build": "npm run build -w @stalkier/core && npm run typecheck && electron-vite build",
+    "typecheck": "npm run build -w @stalkier/core && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "dist": "npm run build && electron-builder --publish never",
     "dist:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
-    "fastest-levenshtein": "^1.0.16",
-    "stopword": "^3.1.5"
+    "@stalkier/core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -54,5 +53,8 @@
     "typescript": "^5.7.2",
     "vite": "^7.3.6",
     "vitest": "^4.1.10"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }

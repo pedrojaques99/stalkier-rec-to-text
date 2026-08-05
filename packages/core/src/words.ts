@@ -1,6 +1,5 @@
 import sw from 'stopword';
-import type { Session, WordCandidate } from '../shared/types.js';
-import { getVocabulary } from './vocabulary.js';
+import type { Session, WordCandidate } from './types.js';
 
 /**
  * "O que vale ensinar ao modelo" — não "as palavras mais ditas".
@@ -75,7 +74,12 @@ export function countWords(text: string): Map<string, Counted> {
  *   aparecer em mais de uma sessão pesa 2x (jargão seu, não acidente de um áudio)
  * O que já está na biblioteca cai pro fim: já foi ensinado, não é tarefa.
  */
-export function wordCandidates(sessions: Session[], days = 30, limit = 60): WordCandidate[] {
+export function wordCandidates(
+  sessions: Session[],
+  vocabulary: string[] = [],
+  days = 30,
+  limit = 60,
+): WordCandidate[] {
   const since = Date.now() - days * 86_400_000;
   const totals = new Map<string, { n: number; sessions: Set<string>; proper: boolean; form: string }>();
 
@@ -93,7 +97,7 @@ export function wordCandidates(sessions: Session[], days = 30, limit = 60): Word
     }
   }
 
-  const library = new Set(getVocabulary().map((v) => v.toLowerCase()));
+  const library = new Set(vocabulary.map((v) => v.toLowerCase()));
   return [...totals.entries()]
     .map(([w, v]) => {
       const inLibrary = library.has(w);

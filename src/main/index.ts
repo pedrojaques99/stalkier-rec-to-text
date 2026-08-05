@@ -14,7 +14,7 @@ import { createWriteStream, existsSync, rmSync, statSync, type WriteStream } fro
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Kind, RecorderState, StartOptions } from '../shared/types.js';
-import { hasFfmpeg, toFlac, toMp3, toMp4 } from './media.js';
+import { hasFfmpeg, toFlac, toMp3, toMp4, wordCandidates } from '@stalkier/core';
 import { pasteText } from './paste.js';
 import { apiKeyHint, getSettings, hasEncryption, setApiKey, setSettings } from './settings.js';
 import {
@@ -30,7 +30,6 @@ import {
 } from './store.js';
 import { testKey, transcribe } from './transcribe.js';
 import { getVocabulary, setVocabulary } from './vocabulary.js';
-import { wordCandidates } from './words.js';
 
 /* ─────────────────────────── Segurança ───────────────────────────────────────
  *
@@ -463,7 +462,7 @@ function registerIpc(): void {
     'key:set': (_e, key: string) => setApiKey(typeof key === 'string' ? key : ''),
     'key:test': () => testKey(),
 
-    'words:list': () => wordCandidates(allSessions()),
+    'words:list': () => wordCandidates(allSessions(), getVocabulary()),
     'vocabulary:get': () => getVocabulary(),
     'vocabulary:set': (_e, list: string[]) => setVocabulary(list),
   };

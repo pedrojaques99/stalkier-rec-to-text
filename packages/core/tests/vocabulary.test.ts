@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { correctWithVocabulary } from '../src/main/vocabulary.js';
-import { countWords, wordCandidates } from '../src/main/words.js';
-import type { Session } from '../src/shared/types.js';
+import { correctWithVocabulary } from '../src/vocabulary.js';
+import { countWords, wordCandidates } from '../src/words.js';
+import type { Session } from '../src/types.js';
 
 // A correção é a única lógica do app que dá pra errar em silêncio. Um falso
 // negativo você percebe lendo; um falso POSITIVO passa despercebido e muda o
@@ -60,7 +60,7 @@ describe('wordCandidates', () => {
   });
 
   it('ranks a likely proper noun above a common word said as often', () => {
-    const out = wordCandidates([session('aaaaaa', 'the Zyra interface shipped today')]);
+    const out = wordCandidates([session('aaaaaa', 'the Zyra interface shipped today')], []);
     expect(out[0]?.word).toBe('Zyra');
   });
 
@@ -68,11 +68,11 @@ describe('wordCandidates', () => {
   // sendo nome próprio: o que se repete ao longo dos dias é o seu jargão, e o
   // que apareceu uma vez pode ter sido acidente daquele áudio.
   it('ranks a word repeated across sessions above a one-off proper noun', () => {
-    const out = wordCandidates([
-      session('aaaaaa', 'the Zyra interface shipped today'),
-      session('bbbbbb', 'interface interface interface'),
-    ]);
+    const out = wordCandidates(
+      [session('aaaaaa', 'the Zyra interface shipped today'), session('bbbbbb', 'interface interface interface')],
+      [],
+    );
     expect(out[0]?.word).toBe('interface');
-    expect(out.map((w) => w.word)).toContain('Zyra');
+    expect(out.map((w: { word: string }) => w.word)).toContain('Zyra');
   });
 });
