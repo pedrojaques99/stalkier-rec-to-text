@@ -65,6 +65,6 @@ jobs:
           persist-credentials: false
       # Varre o histórico inteiro. Chave que vaza num commit continua vazada
       # depois do commit que a remove — quem precisa saber é quem revisa o PR.
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
