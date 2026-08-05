@@ -35,12 +35,12 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: vitest
         update-types: [version-update:semver-major]
-      # Electron major muda o Node e o Chromium embutidos: precisa de teste
-      # manual do atalho global, do loopback e da pílula antes de entrar.
       # TypeScript major muda como o código INTEIRO é checado, e um typecheck
       # verde é exatamente o que ele seria se passasse a checar menos.
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # Electron major troca o Node e o Chromium embutidos: pede teste manual do
+      # atalho global, do loopback do Windows e da pílula antes de entrar.
       - dependency-name: electron
         update-types: [version-update:semver-major]
 
