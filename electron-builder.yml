@@ -1,0 +1,27 @@
+appId: com.pedrojaques99.stalkier
+productName: stalkier
+directories:
+  buildResources: resources
+  output: release
+files:
+  - out/**/*
+  - package.json
+# Nada nativo: o app não usa módulo compilado, então não há rebuild por versão
+# do Electron — que é onde a maioria dos projetos Electron trava na instalação.
+npmRebuild: false
+win:
+  target: nsis
+  # Sem assinatura de código por enquanto. O Windows vai mostrar o aviso do
+  # SmartScreen, e isso está escrito aqui de propósito em vez de virar
+  # surpresa: um certificado custa e a decisão é do mantenedor.
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: dmg
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  category: Utility

@@ -1,0 +1,39 @@
+# Dependencies / build
+node_modules/
+out/
+dist/
+release/
+*.tsbuildinfo
+
+# Anything that could carry a secret or personal data.
+# The app never writes here (it uses the OS userData dir), but a stray copy
+# during debugging must not be committable.
+*.env
+.env*
+!.env.example
+apikey.bin
+settings.json
+vocabulary.json
+sessions.json
+media/
+data/
+
+# Recordings and transcripts, wherever they land
+*.mp3
+*.mp4
+*.webm
+*.flac
+*.wav
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python (optional local whisper)
+__pycache__/
+*.pyc
+.venv/
+venv/

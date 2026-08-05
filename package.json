@@ -1,0 +1,58 @@
+{
+  "name": "stalkier-rec-to-text",
+  "version": "0.1.0",
+  "description": "Press a shortcut, speak, and the text lands where your cursor is. Local-first voice-to-text with your own API key.",
+  "license": "MIT",
+  "author": "pedrojaques99",
+  "homepage": "https://github.com/pedrojaques99/stalkier-rec-to-text",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedrojaques99/stalkier-rec-to-text.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pedrojaques99/stalkier-rec-to-text/issues"
+  },
+  "keywords": [
+    "speech-to-text",
+    "dictation",
+    "whisper",
+    "electron",
+    "byok",
+    "privacy",
+    "local-first",
+    "wispr-flow-alternative"
+  ],
+  "main": "./out/main/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never"
+  },
+  "dependencies": {
+    "fastest-levenshtein": "^1.0.16",
+    "stopword": "^3.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>recording</title>
+    <style>
+      :root {
+        --bg: #131316;
+        --border: #26262b;
+        --text: #f4f4f5;
+        --muted: #a1a1aa;
+        --red: #ff453a;
+        --accent: #52debb;
+        --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        background: transparent; overflow: hidden; user-select: none;
+        font: 500 12px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      #pill {
+        display: flex; align-items: center; gap: 9px;
+        height: 36px; margin: 4px; padding: 0 12px;
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        border: 1px solid var(--border); border-radius: 18px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(12px);
+        opacity: 0; transform: translateY(6px);
+        transition: opacity 0.16s var(--ease-out), transform 0.16s var(--ease-out);
+      }
+      #pill[data-on] { opacity: 1; transform: none; }
+
+      /* Vermelho é a convenção universal de "está gravando", e é a única cor de
+         alarme aqui — o resto da pílula é neutro pra não competir com ela. */
+      #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+      #pill[data-mode="transcribing"] #dot { background: var(--accent); }
+      @keyframes breathe { 50% { opacity: 0.35; } }
+      #pill[data-mode="recording"] #dot { animation: breathe 1.4s ease-in-out infinite; }
+
+      #time {
+        font: 500 12.5px/1 ui-monospace, "Cascadia Mono", Menlo, monospace;
+        color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+      }
+      #label { color: var(--muted); font-size: 11.5px; }
+
+      #level { display: flex; align-items: center; gap: 2px; margin-left: auto; height: 16px; }
+      #level i {
+        display: block; width: 2.5px; height: 100%; border-radius: 2px;
+        background: var(--muted); opacity: 0.3;
+        transform: scaleY(0.22); transform-origin: center;
+        transition: transform 0.09s linear, opacity 0.09s linear, background-color 0.12s ease;
+      }
+      #pill[data-mode="recording"] #level i[data-lit] { background: var(--accent); opacity: 1; }
+
+      /* Transcrevendo: a MESMA onda vira o loader, varrendo. Um spinner seria o
+         círculo genérico de qualquer app; a onda diz o que está acontecendo —
+         o que estava ouvindo agora está lendo. Sem barra de progresso: a
+         transcrição volta de uma vez, e barra que anda sem saber pra onde é
+         mentira. */
+      @keyframes sweep {
+        0%, 100% { transform: scaleY(0.22); opacity: 0.3; }
+        45% { transform: scaleY(1); opacity: 1; }
+      }
+      #pill[data-mode="transcribing"] #level i {
+        background: var(--accent);
+        animation: sweep 1.05s ease-in-out infinite;
+      }
+      #pill[data-mode="transcribing"] #level i:nth-child(1) { animation-delay: 0s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(2) { animation-delay: 0.09s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(3) { animation-delay: 0.18s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(4) { animation-delay: 0.27s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(5) { animation-delay: 0.36s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(6) { animation-delay: 0.45s; }
+      #pill[data-mode="transcribing"] #level i:nth-child(7) { animation-delay: 0.54s; }
+
+      @media (prefers-reduced-motion: reduce) {
+        #pill, #level i { transition-duration: 0.01ms; }
+        #pill[data-mode="recording"] #dot { animation: none; }
+        /* Loader indeterminado com duração ~zero pareceria travado: tira o
+           movimento e deixa a barra de pé. Quem carrega o estado é a palavra. */
+        #pill[data-mode="transcribing"] #level i { animation: none; transform: scaleY(0.6); opacity: 0.6; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pill" data-mode="recording">
+      <span id="dot"></span>
+      <span id="time">0:00</span>
+      <span id="label"></span>
+      <span id="level"></span>
+    </div>
+    <script type="module" src="/src/overlay.ts"></script>
+  </body>
+</html>
