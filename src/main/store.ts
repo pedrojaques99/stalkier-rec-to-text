@@ -92,9 +92,45 @@ export function getSession(id: string): Session | null {
   return readAll().find((s) => s.id === id) ?? null;
 }
 
+/**
+ * Fronteira de validação entre a resposta do serviço e o disco.
+ *
+ * O texto e os segmentos vêm de uma API remota. O caminho do arquivo NUNCA
+ * depende deles (é fixo, e o id é gerado aqui), mas o tamanho depende: uma
+ * resposta corrompida, um serviço comprometido ou um bug do outro lado
+ * devolvendo megabytes entopem o índice que este app lê inteiro na memória, e
+ * a partir daí ele não abre mais.
+ *
+ * Os limites são folgados de propósito — 200 mil caracteres são ~30 horas de
+ * fala — e existem pra transformar um dado absurdo em dado truncado, em vez de
+ * num app que não inicia.
+ */
+const MAX_TEXT = 200_000;
+const MAX_SEGMENTS = 20_000;
+const MAX_SEGMENT_TEXT = 4_000;
+
+function sanitize(s: Session): Session {
+  return {
+    id: s.id,
+    createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
+    kind: s.kind === 'screen' || s.kind === 'dictation' ? s.kind : 'audio',
+    durMs: Math.max(0, Math.min(Number(s.durMs) || 0, 24 * 3600 * 1000)),
+    hasVideo: !!s.hasVideo,
+    engine: s.engine === 'groq' ? 'groq' : 'local',
+    costUsd: Math.max(0, Math.min(Number(s.costUsd) || 0, 1000)),
+    text: String(s.text ?? '').slice(0, MAX_TEXT),
+    segments: (Array.isArray(s.segments) ? s.segments : []).slice(0, MAX_SEGMENTS).map((seg) => ({
+      start: Number(seg?.start) || 0,
+      end: Number(seg?.end) || 0,
+      text: String(seg?.text ?? '').slice(0, MAX_SEGMENT_TEXT),
+    })),
+  };
+}
+
 export function saveSession(s: Session): void {
+  if (!isValidId(s.id)) throw new Error('invalid id');
   const list = readAll().filter((x) => x.id !== s.id);
-  list.push(s);
+  list.push(sanitize(s));
   writeAll(list);
 }
 
