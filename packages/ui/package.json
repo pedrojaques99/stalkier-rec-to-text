@@ -8,13 +8,18 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./theme.css": "./src/theme.css"
   },
-  "files": ["dist", "src/theme.css"],
+  "files": [
+    "dist",
+    "src/theme.css"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepare": "npm run build"
+    "build": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "lucide-react": ">=0.400.0",
@@ -26,5 +31,6 @@
   "devDependencies": {
     "@types/react": "^18.3.17",
     "typescript": "^5.7.2"
-  }
+  },
+  "_build_comment": "Sem `prepare`: durante o npm ci ele roda antes do dist do core existir, e o build do ui morre. Quem constrói na ordem certa é o script do repo raiz (npm run build --workspaces), que respeita a dependência entre os pacotes."
 }
