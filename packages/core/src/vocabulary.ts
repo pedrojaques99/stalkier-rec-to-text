@@ -1,5 +1,5 @@
 import { distance } from 'fastest-levenshtein';
-import sw from 'stopword';
+import { eng, por } from 'stopword';
 
 /**
  * A biblioteca de palavras: nomes próprios, apelidos, apps e jargão que o
@@ -43,7 +43,7 @@ export function correctWithVocabulary(text: string, vocab: string[]): string {
   const terms = vocab.filter((t) => !/\s/.test(t) && t.length >= 3);
   if (!terms.length) return text;
   const exact = new Map(terms.map((t) => [t.toLowerCase(), t]));
-  const stop = new Set<string>([...sw.por, ...sw.eng]);
+  const stop = new Set<string>([...por, ...eng]);
 
   return text.replace(WORD, (w) => {
     const l = w.toLowerCase();

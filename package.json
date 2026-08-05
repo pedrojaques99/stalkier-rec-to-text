@@ -30,14 +30,15 @@
   "scripts": {
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
-    "build": "npm run build -w @stalkier/core && npm run typecheck && electron-vite build",
-    "typecheck": "npm run build -w @stalkier/core && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "build": "npm run build --workspaces --if-present && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
+    "typecheck": "npm run build --workspaces --if-present && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "dist": "npm run build && electron-builder --publish never",
     "dist:dir": "npm run build && electron-builder --dir --publish never"
   },
   "dependencies": {
-    "@stalkier/core": "*"
+    "@stalkier/core": "*",
+    "@stalkier/ui": "*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

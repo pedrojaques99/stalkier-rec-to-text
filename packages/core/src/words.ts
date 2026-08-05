@@ -1,4 +1,4 @@
-import sw from 'stopword';
+import { eng, por } from 'stopword';
 import type { Session, WordCandidate } from './types.js';
 
 /**
@@ -48,7 +48,7 @@ interface Counted {
 export function countWords(text: string): Map<string, Counted> {
   const out = new Map<string, Counted>();
   if (!text) return out;
-  const stop = new Set<string>([...sw.por, ...sw.eng, ...FILLER_PT, ...FILLER_EN]);
+  const stop = new Set<string>([...por, ...eng, ...FILLER_PT, ...FILLER_EN]);
   // Divide em frases pra saber quem está no começo (onde a maiúscula não diz nada).
   for (const sentence of text.split(/(?<=[.!?])\s+/)) {
     const words = sentence.match(WORD) || [];

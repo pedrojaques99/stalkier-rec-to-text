@@ -1,0 +1,30 @@
+{
+  "name": "@stalkier/ui",
+  "version": "0.1.0",
+  "description": "The recorder screen, shared by the standalone app and the Jaques Studio tab. Talks to the system through an injected adapter.",
+  "license": "MIT",
+  "_comment": "ESM: quem consome são dois apps Vite. O core é CJS porque lá do outro lado tem backend Node em require; aqui não tem.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./theme.css": "./src/theme.css"
+  },
+  "files": ["dist", "src/theme.css"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build"
+  },
+  "peerDependencies": {
+    "lucide-react": ">=0.400.0",
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@stalkier/core": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.17",
+    "typescript": "^5.7.2"
+  }
+}

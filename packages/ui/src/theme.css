@@ -1,0 +1,50 @@
+/**
+ * Tokens do componente.
+ *
+ * Cada um cai no token do app hospedeiro quando ele existe, e só então no valor
+ * de fábrica: dentro do Jaques Studio, que chama os seus de `--color-*`, a tela
+ * pega a paleta de lá sozinha — inclusive a cor de destaque que você troca no
+ * menu. Sozinho, usa a paleta abaixo.
+ *
+ * É isso que deixa UM componente parecer nativo em dois apps sem prop de tema.
+ */
+:root {
+  --bg: var(--color-bg, #09090b);
+  --surface: var(--color-surface, #131316);
+  --surface-2: var(--color-surface-2, #1d1d22);
+  --surface-3: var(--color-surface-3, #26262b);
+
+  --border: var(--color-border, #222227);
+  --border-soft: var(--color-border-soft, #18181b);
+
+  --text: var(--color-text, #f4f4f5);
+  --muted: var(--color-text-muted, #a1a1aa);
+  --faint: var(--color-text-faint, #52525b);
+
+  --accent: var(--color-accent, #30d158);
+  --accent-dim: var(--color-green-dim, #13331b);
+  --yellow: var(--color-yellow, #ffd60a);
+  --red: var(--color-red, #ff453a);
+  --red-dim: var(--color-red-dim, #3b110e);
+
+  /* Motion, em peças. Nada de `transition: all`, que anima propriedade que
+     ninguém pediu, layout incluído, e aí trava. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-press: 0.12s;
+  --dur-fast: 0.16s;
+  --dur-base: 0.2s;
+
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes breathe { 50% { opacity: 0.45; } }
+/* Varredura: a barra cresce e apaga em onda. ease-in-out porque é movimento
+   contínuo na tela, não entrada nem saída. */
+@keyframes sweep {
+  0%, 100% { transform: scaleY(0.22); opacity: 0.3; }
+  45% { transform: scaleY(1); opacity: 1; }
+}

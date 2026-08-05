@@ -74,6 +74,20 @@ Three layers do the transcription, in this order:
    an LLM "fixing" a proper noun invents proper nouns.
 3. **Polish** (off by default) — strips hesitations and stutters.
 
+
+## Repo layout
+
+The recorder also runs inside a private Studio app, so the parts that would
+drift are packages instead of copies:
+
+| Package | What it holds |
+|---|---|
+|  | The rules: vocabulary correction, word scoring, prompt budget, transcription orchestration, ffmpeg. No Electron, no server, no UI. |
+|  | The screen. Talks to the system through an injected adapter and takes its strings as a prop, so the same component runs in English here and in Portuguese there. |
+|  | This app's shell: IPC handlers, storage, OS keystore, windows, global shortcut. |
+
+A second shell only implements  and passes a string dictionary.
+
 ## Security
 
 This is a desktop app that listens to your microphone and holds an API key, so
