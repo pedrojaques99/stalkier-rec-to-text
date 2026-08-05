@@ -14,6 +14,31 @@ updates:
       production:
         dependency-type: production
         update-types: [minor, patch]
+    # Major destes ANDA EM CONJUNTO e não cabe em PR automático: plugin-react 6
+    # exige vite 8, que o electron-vite 5 ainda não aceita; react-dom 19 exige
+    # react 19. Um PR por pacote nasce vermelho, e um CI que vive vermelho para
+    # de ser lido. Major aqui é decisão humana, com os quatro subindo juntos.
+    ignore:
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/react'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/react-dom'
+        update-types: [version-update:semver-major]
+      - dependency-name: vite
+        update-types: [version-update:semver-major]
+      - dependency-name: '@vitejs/plugin-react'
+        update-types: [version-update:semver-major]
+      - dependency-name: electron-vite
+        update-types: [version-update:semver-major]
+      - dependency-name: vitest
+        update-types: [version-update:semver-major]
+      # Electron major muda o Node e o Chromium embutidos: precisa de teste
+      # manual do atalho global, do loopback e da pílula antes de entrar.
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
