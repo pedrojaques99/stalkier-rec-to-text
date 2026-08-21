@@ -21,7 +21,7 @@ const mmss = (ms: number): string => {
 
 window.api.rec.onState((raw) => {
   const s = raw as unknown as RecorderState;
-  const mode = s.recording ? 'recording' : s.transcribing ? 'transcribing' : 'idle';
+  const mode = s.recording ? 'recording' : s.preparing ? 'preparing' : s.transcribing ? 'transcribing' : 'idle';
   pill.dataset.mode = mode;
 
   if (mode === 'idle') {
@@ -30,6 +30,18 @@ window.api.rec.onState((raw) => {
     return;
   }
   requestAnimationFrame(() => pill.setAttribute('data-on', ''));
+
+  // Preparando: sem cronômetro. Não existe gravação ainda, e um contador
+  // correndo aqui seria feedback errado, que é pior que nenhum.
+  if (mode === 'preparing') {
+    window.clearInterval(timer);
+    label.textContent = s.kind === 'screen' ? 'waiting for the screen' : 'preparing';
+    bars.forEach((b) => {
+      b.style.transform = '';
+      b.removeAttribute('data-lit');
+    });
+    return;
+  }
 
   if (s.recording) {
     since = s.since || Date.now();

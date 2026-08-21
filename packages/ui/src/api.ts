@@ -22,6 +22,8 @@ export interface RecorderApi {
   onState(cb: (s: RecorderState) => void): () => void;
   onLevel(cb: (v: number) => void): () => void;
   shortcut(accelerator: string): Promise<unknown>;
+  /** Atalho da gravação de tela, separado do ditado. */
+  shortcutScreen(accelerator: string): Promise<unknown>;
   /** Tira o atalho do ar enquanto o campo de captura está focado. */
   pauseShortcut(pause: boolean): Promise<unknown>;
 
@@ -29,7 +31,9 @@ export interface RecorderApi {
   getSession(id: string): Promise<Session | null>;
   removeSession(id: string): Promise<unknown>;
   /** Onde o player busca a mídia: `media://id.mp3` num, rota HTTP no outro. */
-  mediaUrl(id: string, kind: 'mp3' | 'mp4'): string;
+  mediaUrl(id: string, kind: 'mp3' | 'mp4' | 'jpg'): string;
+  /** Refaz só a transcrição. A mídia já está no disco e não se toca. */
+  retranscribe(id: string): Promise<unknown>;
 
   getSettings(): Promise<SettingsSnapshot>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;

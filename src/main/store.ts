@@ -42,7 +42,7 @@ export const newId = (): string =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 /** Caminho de mídia, sempre derivado de um id validado — nunca de entrada crua. */
-export function mediaPath(id: string, ext: 'mp3' | 'mp4' | 'webm' | 'flac'): string {
+export function mediaPath(id: string, ext: 'mp3' | 'mp4' | 'jpg' | 'webm' | 'flac'): string {
   if (!isValidId(id)) throw new Error('invalid id');
   return join(mediaDir(), `${id}.${ext}`);
 }
@@ -74,6 +74,10 @@ const summarize = (s: Session): SessionSummary => ({
   kind: s.kind,
   durMs: s.durMs,
   hasVideo: s.hasVideo,
+  hasPoster: s.hasPoster,
+  status: s.status,
+  error: s.error,
+  sizeBytes: s.sizeBytes,
   engine: s.engine,
   costUsd: s.costUsd,
   preview: (s.text || '').slice(0, 400),
@@ -116,6 +120,11 @@ function sanitize(s: Session): Session {
     kind: s.kind === 'screen' || s.kind === 'dictation' ? s.kind : 'audio',
     durMs: Math.max(0, Math.min(Number(s.durMs) || 0, 24 * 3600 * 1000)),
     hasVideo: !!s.hasVideo,
+    hasPoster: !!s.hasPoster,
+    status: s.status === 'processing' || s.status === 'failed' ? s.status : 'ok',
+    // O motivo do erro vem de fora (ffmpeg, API), então é truncado como o resto.
+    error: s.error ? String(s.error).slice(0, 400) : null,
+    sizeBytes: Math.max(0, Math.min(Number(s.sizeBytes) || 0, 64 * 1024 ** 3)),
     engine: s.engine === 'groq' ? 'groq' : 'local',
     costUsd: Math.max(0, Math.min(Number(s.costUsd) || 0, 1000)),
     text: String(s.text ?? '').slice(0, MAX_TEXT),
@@ -134,13 +143,23 @@ export function saveSession(s: Session): void {
   writeAll(list);
 }
 
+/**
+ * Atualiza só o que a transcrição descobriu. A mídia já está gravada e a linha
+ * já existe: é isso que faz uma falha de transcrição não apagar a gravação.
+ */
+export function updateSession(id: string, patch: Partial<Session>): void {
+  const current = getSession(id);
+  if (!current) return;
+  saveSession({ ...current, ...patch, id: current.id });
+}
+
 export function removeSession(id: string): boolean {
   if (!isValidId(id)) return false;
   const list = readAll();
   const next = list.filter((s) => s.id !== id);
   if (next.length === list.length) return false;
   writeAll(next);
-  for (const ext of ['mp3', 'mp4', 'webm', 'flac'] as const) {
+  for (const ext of ['mp3', 'mp4', 'jpg', 'webm', 'flac'] as const) {
     const p = join(mediaDir(), `${id}.${ext}`);
     if (existsSync(p)) rmSync(p, { force: true });
   }

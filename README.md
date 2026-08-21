@@ -22,6 +22,13 @@ three things that actually make dictation usable:
   "Claude".
 - **A local fallback.** No key, no network, or the service is down: it
   transcribes offline instead of failing, and tells you which engine ran.
+- **A second shortcut for the screen** (`Ctrl+Shift+R`), which records screen
+  and audio from anywhere, silence included. The recording is saved as soon as
+  the file exists — before, and independently of, the transcript. A failed
+  transcript is a label on the card with a *try again* button, never a lost
+  recording.
+- **A gallery**, not a list: every screen recording gets a poster frame, and
+  clicking one opens a player with the transcript beside it.
 
 ## Install
 

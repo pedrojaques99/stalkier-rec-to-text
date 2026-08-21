@@ -84,3 +84,17 @@ export async function toMp4(src: string, dest: string): Promise<'remux' | 'reenc
   await ffmpeg(['-i', src, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', ...common, dest]);
   return 'reencode';
 }
+
+/**
+ * Um frame como capa da gravação. É o que separa uma galeria de uma lista com
+ * ícone: sem capa, cinco gravações de tela do mesmo dia são cinco retângulos
+ * idênticos e você abre as cinco pra achar a certa.
+ *
+ * `-ss` ANTES do `-i` busca por keyframe e volta em milissegundos; depois do
+ * `-i` ele decodifica tudo até o instante pedido, o que num mp4 de uma hora
+ * custa mais que o resto do processamento junto. O instante é ~1s porque o
+ * primeiro frame de uma captura de tela costuma ser preto.
+ */
+export const toPoster = (src: string, dest: string, atSec = 1): Promise<void> =>
+  ffmpeg(['-ss', String(Math.max(0, atSec)), '-i', src, '-frames:v', '1',
+    '-vf', 'scale=640:-2', '-q:v', '4', dest]);

@@ -76,6 +76,8 @@ export interface Strings {
   localHint: string;
 
   shortcutLabel: string;
+  shortcutScreenLabel: string;
+  shortcutScreenHint: string;
   shortcutChange: string;
   shortcutNone: string;
   shortcutPress: string;
@@ -88,6 +90,31 @@ export interface Strings {
   libraryAdd: string;
   libraryRemove: (term: string) => string;
   libraryHint: string;
+
+  // ─── Galeria ───
+  viewGrid: string;
+  viewList: string;
+  screenBadge: string;
+  processing: string;
+  failed: string;
+  failedHint: (err: string) => string;
+  retry: string;
+  retrying: string;
+  noSpeech: string;
+  play: string;
+  close: string;
+  prev: string;
+  next: string;
+  size: (mb: string) => string;
+
+  // ─── Resultado ───
+  preparing: string;
+  preparingScreen: string;
+  savedOk: (duration: string) => string;
+  savedFail: (err: string) => string;
+  noMicWarning: string;
+  openRecording: string;
+  dismiss: string;
 }
 
 export const en: Strings = {
@@ -164,6 +191,8 @@ export const en: Strings = {
   localHint: 'No cost and offline, but it takes roughly as long as the audio. Needs Python and faster-whisper.',
 
   shortcutLabel: 'global shortcut',
+  shortcutScreenLabel: 'screen shortcut',
+  shortcutScreenHint: 'press it anywhere and the screen starts recording, silence included. press again to stop',
   shortcutChange: 'change',
   shortcutNone: 'none',
   shortcutPress: 'press the combination',
@@ -177,6 +206,29 @@ export const en: Strings = {
   libraryRemove: (term) => `Remove ${term}`,
   libraryHint:
     'These go to the model as context, and near-misses are corrected afterwards. It is what turns “kubernets” into “Kubernetes” without touching “cloud”.',
+
+  viewGrid: 'Gallery',
+  viewList: 'List',
+  screenBadge: 'screen',
+  processing: 'transcribing',
+  failed: 'no transcript',
+  failedHint: (err) => `The recording is safe. The transcript failed: ${err}`,
+  retry: 'try again',
+  retrying: 'trying…',
+  noSpeech: 'no speech',
+  play: 'Play',
+  close: 'Close',
+  prev: 'Previous',
+  next: 'Next',
+  size: (mb) => `${mb} MB`,
+
+  preparing: 'Preparing…',
+  preparingScreen: 'Waiting for the screen capture…',
+  savedOk: (duration) => `Saved, ${duration}`,
+  savedFail: (err) => `Nothing was saved: ${err}`,
+  noMicWarning: 'recorded without the microphone',
+  openRecording: 'open',
+  dismiss: 'Dismiss',
 };
 
 export const pt: Strings = {
@@ -252,6 +304,8 @@ export const pt: Strings = {
   localHint: 'Custo zero e offline, mas leva mais ou menos o tempo do áudio.',
 
   shortcutLabel: 'atalho global',
+  shortcutScreenLabel: 'atalho da tela',
+  shortcutScreenHint: 'aperta em qualquer janela e a tela começa a gravar, com ou sem você falando. aperta de novo pra parar',
   shortcutChange: 'trocar',
   shortcutNone: 'nenhum',
   shortcutPress: 'aperte a combinação',
@@ -265,4 +319,27 @@ export const pt: Strings = {
   libraryRemove: (term) => `Remover ${term}`,
   libraryHint:
     'Vai como contexto pro modelo e depois conserta o que ele escreveu parecido. É o que faz “Vizant” virar “Visant” sem tocar em “cloud”.',
+
+  viewGrid: 'Galeria',
+  viewList: 'Lista',
+  screenBadge: 'tela',
+  processing: 'transcrevendo',
+  failed: 'sem transcrição',
+  failedHint: (err) => `A gravação está salva. Quem falhou foi a transcrição: ${err}`,
+  retry: 'tentar de novo',
+  retrying: 'tentando…',
+  noSpeech: 'sem fala',
+  play: 'Abrir',
+  close: 'Fechar',
+  prev: 'Anterior',
+  next: 'Próxima',
+  size: (mb) => `${mb} MB`,
+
+  preparing: 'Preparando…',
+  preparingScreen: 'Esperando a captura da tela…',
+  savedOk: (duration) => `Gravado, ${duration}`,
+  savedFail: (err) => `Não gravou nada: ${err}`,
+  noMicWarning: 'gravado sem o microfone',
+  openRecording: 'abrir',
+  dismiss: 'Fechar aviso',
 };

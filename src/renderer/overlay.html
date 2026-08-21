@@ -11,6 +11,7 @@
         --muted: #a1a1aa;
         --red: #ff453a;
         --accent: #52debb;
+        --yellow: #f5a524;
         --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -35,8 +36,11 @@
          alarme aqui — o resto da pílula é neutro pra não competir com ela. */
       #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
       #pill[data-mode="transcribing"] #dot { background: var(--accent); }
+      #pill[data-mode="preparing"] #dot { background: var(--yellow); }
+      #pill[data-mode="preparing"] #time { display: none; }
       @keyframes breathe { 50% { opacity: 0.35; } }
       #pill[data-mode="recording"] #dot { animation: breathe 1.4s ease-in-out infinite; }
+      #pill[data-mode="preparing"] #dot { animation: breathe 0.9s ease-in-out infinite; }
 
       #time {
         font: 500 12.5px/1 ui-monospace, "Cascadia Mono", Menlo, monospace;

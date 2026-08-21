@@ -12,6 +12,7 @@ import type { Session } from '../src/shared/types.js';
 
 const base = (over: Partial<Session> = {}): Session => ({
   id: newId(), createdAt: Date.now(), kind: 'audio', durMs: 1000, hasVideo: false,
+  hasPoster: false, status: 'ok', error: null, sizeBytes: 0,
   engine: 'groq', costUsd: 0.001, text: 'hello', segments: [], ...over,
 });
 

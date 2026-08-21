@@ -18,11 +18,13 @@ const api: RecorderApi = {
   onState: (cb) => window.api.rec.onState(cb as (s: never) => void),
   onLevel: (cb) => window.api.rec.onLevel(cb as (v: never) => void),
   shortcut: (acc) => window.api.rec.shortcut(acc),
+  shortcutScreen: (acc) => window.api.rec.shortcutScreen(acc),
   pauseShortcut: (v) => window.api.rec.pauseShortcut(v),
 
   listSessions: (q) => window.api.sessions.list(q),
   getSession: (id) => window.api.sessions.get(id),
   removeSession: (id) => window.api.sessions.remove(id),
+  retranscribe: (id) => window.api.sessions.retranscribe(id),
   // Protocolo próprio, com id validado do outro lado — nunca caminho de arquivo.
   mediaUrl: (id, kind) => `media://${id}.${kind}`,
 
