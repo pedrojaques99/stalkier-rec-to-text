@@ -13,12 +13,26 @@ export interface Segment {
   text: string;
 }
 
+/**
+ * `ok` só quando a transcrição terminou. `processing` e `failed` EXISTEM como
+ * sessão de verdade, com mídia tocável: a gravação não pode depender de haver
+ * fala, chave de API ou rede pra aparecer. Quem grava vinte minutos de tela em
+ * silêncio tem que ver os vinte minutos na galeria.
+ */
+export type Status = 'processing' | 'ok' | 'failed';
+
 export interface Session {
   id: string;
   createdAt: number;
   kind: Kind;
   durMs: number;
   hasVideo: boolean;
+  /** Capa (um frame). Só gravação de tela tem. */
+  hasPoster: boolean;
+  status: Status;
+  /** Por que a transcrição falhou. A mídia continua lá. */
+  error: string | null;
+  sizeBytes: number;
   engine: Engine;
   costUsd: number;
   text: string;
@@ -38,16 +52,27 @@ export interface Settings {
   /** Som do sistema (loopback). Só existe no Windows. */
   system: boolean;
   shortcut: string;
+  /** Atalho da gravação de TELA. Separado de propósito: um atalho que às vezes
+   *  grava a tela e às vezes dita é um atalho que você para de usar. */
+  shortcutScreen: string;
 }
 
 export interface RecorderState {
+  /** Entre o toque e o `MediaRecorder.start()`. Existe porque `getDisplayMedia`
+   *  pode levar segundos ou ser negado, e sem este estado o cronômetro corre
+   *  antes de haver gravação — o pior feedback possível: mentira. */
+  preparing: boolean;
   recording: boolean;
   transcribing: boolean;
   kind: Kind;
   since: number;
   shortcut: string | null;
+  /** null quando outro app já usa a combinação. */
+  shortcutScreen: string | null;
   error: string | null;
-  last?: { id?: string; text?: string; error?: string; engine?: Engine };
+  /** A última gravação, pro aviso de resultado. `at` muda a cada gravação, e é
+   *  o que deixa a interface distinguir dois resultados iguais em sequência. */
+  last?: { id?: string; text?: string; error?: string; engine?: Engine; kind?: Kind; durMs?: number; bytes?: number; warning?: string | null; at?: number };
 }
 
 export interface WordCandidate {
@@ -73,5 +98,10 @@ export const DEFAULT_SETTINGS: Settings = {
   paste: true,
   mic: true,
   system: false,
+  // Padrão de quem acabou de instalar: combinação que existe em QUALQUER
+  // teclado. F13 e as irmãs dela são ótimas (não aparecem no meio de um texto),
+  // mas só quem tem teclado com macro as produz — quem tem troca em dois
+  // cliques. Atenção: o Windows recusa F12 a F24 SEM modificador.
   shortcut: 'CommandOrControl+Shift+Space',
+  shortcutScreen: 'CommandOrControl+Shift+R',
 };

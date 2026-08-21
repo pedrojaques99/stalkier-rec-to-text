@@ -14,7 +14,7 @@ import { createWriteStream, existsSync, rmSync, statSync, type WriteStream } fro
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Kind, RecorderState, StartOptions } from '../shared/types.js';
-import { hasFfmpeg, toFlac, toMp3, toMp4, wordCandidates } from '@stalkier/core';
+import { hasFfmpeg, toFlac, toMp3, toMp4, toPoster, wordCandidates } from '@stalkier/core';
 import { pasteText } from './paste.js';
 import { apiKeyHint, getSettings, hasEncryption, setApiKey, setSettings } from './settings.js';
 import {
@@ -26,6 +26,7 @@ import {
   monthUsage,
   newId,
   removeSession,
+  updateSession,
   saveSession,
 } from './store.js';
 import { testKey, transcribe } from './transcribe.js';
@@ -54,11 +55,13 @@ let recorderWindow: BrowserWindow | null = null;
 let pill: BrowserWindow | null = null;
 
 let state: RecorderState = {
+  preparing: false,
   recording: false,
   transcribing: false,
   kind: 'audio',
   since: 0,
   shortcut: null,
+  shortcutScreen: null,
   error: null,
 };
 
@@ -195,7 +198,7 @@ const hidePill = (): void => {
 let capture: { id: string; kind: Kind; dictation: boolean; stream: WriteStream } | null = null;
 
 async function start(opts: StartOptions = {}): Promise<RecorderState> {
-  if (state.recording) return state;
+  if (state.recording || state.preparing) return state;
   const s = getSettings();
   const cfg = {
     kind: (opts.kind || 'audio') as Kind,
@@ -219,32 +222,51 @@ async function start(opts: StartOptions = {}): Promise<RecorderState> {
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send);
   else send();
 
-  state = { ...state, recording: true, transcribing: false, kind: cfg.kind, since: Date.now(), error: null };
+  // `preparing`, não `recording`: entre este ponto e o `MediaRecorder.start()`
+  // existe o `getDisplayMedia`, que leva segundos e pode ser NEGADO. Marcar
+  // "gravando" aqui faria o cronômetro correr sobre uma gravação que talvez
+  // nunca comece, e o erro só apareceria no fim, sem arquivo.
+  state = { ...state, preparing: true, recording: false, transcribing: false, kind: cfg.kind, since: 0, error: null };
   showPill();
   push('state');
   return state;
 }
 
 function stop(): RecorderState {
+  // Parar enquanto prepara também vale: é o caso de apertar de novo porque
+  // "não aconteceu nada". Sem isto o toque some no vazio e a captura segue.
+  if (state.preparing && !state.recording) return cancel();
   if (!state.recording) return state;
   recorderWindow?.webContents.send('recorder:stop');
-  state = { ...state, recording: false, transcribing: true };
+  state = { ...state, preparing: false, recording: false, transcribing: true };
   push('state');
   return state;
 }
 
 function cancel(): RecorderState {
-  if (!state.recording && !state.transcribing) return state;
+  if (!state.recording && !state.transcribing && !state.preparing) return state;
   recorderWindow?.webContents.send('recorder:cancel');
   capture?.stream.destroy();
   if (capture) rmSync(mediaPath(capture.id, 'webm'), { force: true });
   capture = null;
-  state = { ...state, recording: false, transcribing: false };
+  state = { ...state, preparing: false, recording: false, transcribing: false };
   hidePill();
   push('state');
   return state;
 }
 
+/**
+ * Duas fases, e a ordem é a decisão inteira.
+ *
+ * FASE 1 (mídia): converte, gera a capa e SALVA a sessão como `processing`. A
+ * partir daqui a gravação existe: aparece na galeria, toca e pode ser baixada.
+ * Não depende de haver fala, chave ou rede.
+ *
+ * FASE 2 (transcrição): enriquece a mesma linha, ou marca `failed` com o
+ * motivo. Antes as duas eram uma só e um erro de transcrição não salvava nada:
+ * gravar meia hora de tela e achar a lista vazia porque a chave expirou é a
+ * pior falha que este app poderia ter.
+ */
 async function finish(durMs: number): Promise<void> {
   const job = capture;
   capture = null;
@@ -259,10 +281,57 @@ async function finish(durMs: number): Promise<void> {
   const flac = mediaPath(job.id, 'flac');
   await new Promise<void>((r) => job.stream.end(() => r()));
 
+  const kind: Kind = job.dictation ? 'dictation' : job.kind;
+  // Ditado curto não vira sessão: senão o histórico enche de "ok" e "testando"
+  // e o painel de palavras vira lixo. Vale só pro ditado — uma gravação de tela
+  // de dois segundos é uma gravação, ainda que ruim.
+  const keep = !job.dictation || durMs >= 3000;
+  let saved = false;
+
   try {
     if (!existsSync(webm) || statSync(webm).size === 0) throw new Error('empty recording');
-    await toFlac(webm, flac);
 
+    if (keep) {
+      await toMp3(webm, mediaPath(job.id, 'mp3'));
+      let hasVideo = false;
+      let hasPoster = false;
+      if (job.kind === 'screen') {
+        try {
+          await toMp4(webm, mediaPath(job.id, 'mp4'));
+          hasVideo = true;
+          // Capa a ~1s: o primeiro frame de uma captura costuma ser preto.
+          try {
+            await toPoster(mediaPath(job.id, 'mp4'), mediaPath(job.id, 'jpg'), durMs > 2000 ? 1 : 0);
+            hasPoster = true;
+          } catch {
+            /* sem capa: o card cai na onda estática */
+          }
+        } catch {
+          /* sem vídeo: o áudio já está salvo */
+        }
+      }
+      const media = mediaPath(job.id, hasVideo ? 'mp4' : 'mp3');
+      saveSession({
+        id: job.id,
+        createdAt: Date.now(),
+        kind,
+        durMs,
+        hasVideo,
+        hasPoster,
+        status: 'processing',
+        error: null,
+        sizeBytes: existsSync(media) ? statSync(media).size : 0,
+        engine: 'groq',
+        costUsd: 0,
+        text: '',
+        segments: [],
+      });
+      saved = true;
+      state = { ...state, transcribing: true };
+      push('state');
+    }
+
+    await toFlac(webm, flac);
     const settings = getSettings();
     const recent = allSessions()
       .sort((a, b) => b.createdAt - a.createdAt)
@@ -271,26 +340,15 @@ async function finish(durMs: number): Promise<void> {
       .join(' ');
     const r = await transcribe(flac, durMs / 1000, settings, recent);
 
-    // Ditado curto não vira sessão: senão o histórico enche de "ok" e "testando"
-    // e o painel de palavras vira lixo.
-    const keep = !job.dictation || durMs >= 3000;
-    if (keep && r.text) {
-      await toMp3(webm, mediaPath(job.id, 'mp3'));
-      let hasVideo = false;
-      if (job.kind === 'screen') {
-        try {
-          await toMp4(webm, mediaPath(job.id, 'mp4'));
-          hasVideo = true;
-        } catch {
-          /* sem vídeo: o áudio e o texto já estão salvos */
-        }
-      }
-      saveSession({
-        id: job.id,
-        createdAt: Date.now(),
-        kind: job.dictation ? 'dictation' : job.kind,
-        durMs,
-        hasVideo,
+    // Ditado sem uma palavra não vira linha no histórico, e a mídia vai junto:
+    // é o caso de apertar sem querer, não uma gravação que você quis fazer.
+    if (saved && job.dictation && !r.text) {
+      removeSession(job.id);
+      saved = false;
+    } else if (saved) {
+      updateSession(job.id, {
+        status: 'ok',
+        error: null,
         engine: r.engine,
         costUsd: r.cost,
         text: r.text,
@@ -302,16 +360,21 @@ async function finish(durMs: number): Promise<void> {
       ...state,
       transcribing: false,
       error: null,
-      last: { id: job.id, text: r.text, engine: r.engine },
+      last: { id: saved ? job.id : undefined, text: r.text, engine: r.engine, kind, durMs, at: Date.now() },
     };
     if (job.dictation && r.text) pasteText(r.text, { paste: getSettings().paste });
   } catch (e) {
     const msg = String((e as Error).message);
+    const readable = msg === 'FFMPEG_MISSING' ? 'ffmpeg not found on PATH' : msg;
+    // A gravação já salva NÃO vira erro: ela existe, o que falhou foi o texto.
+    if (saved) updateSession(job.id, { status: 'failed', error: readable });
     state = {
       ...state,
       transcribing: false,
-      error: msg === 'FFMPEG_MISSING' ? 'ffmpeg not found on PATH' : msg,
-      last: { error: msg },
+      error: readable,
+      last: saved
+        ? { id: job.id, kind, durMs, at: Date.now() }
+        : { error: readable, kind, durMs, at: Date.now() },
     };
   } finally {
     rmSync(webm, { force: true });
@@ -321,9 +384,36 @@ async function finish(durMs: number): Promise<void> {
   }
 }
 
+/** Tentar de novo: a mídia está no disco, então refazemos só a fase 2. */
+async function retranscribe(id: string): Promise<{ ok: boolean; error?: string }> {
+  const s = getSession(id);
+  if (!s) return { ok: false, error: 'unknown session' };
+  const source = mediaPath(id, s.hasVideo ? 'mp4' : 'mp3');
+  if (!existsSync(source)) return { ok: false, error: 'the media for this session is gone' };
+  const flac = mediaPath(id, 'flac');
+  updateSession(id, { status: 'processing', error: null });
+  push('state');
+  try {
+    await toFlac(source, flac);
+    const settings = getSettings();
+    const r = await transcribe(flac, (s.durMs || 0) / 1000, settings, '');
+    updateSession(id, {
+      status: 'ok', error: null, engine: r.engine, costUsd: r.cost, text: r.text, segments: r.segments,
+    });
+    return { ok: true };
+  } catch (e) {
+    const msg = String((e as Error).message);
+    updateSession(id, { status: 'failed', error: msg });
+    return { ok: false, error: msg };
+  } finally {
+    rmSync(flac, { force: true });
+  }
+}
+
 // ─── Atalho global ───────────────────────────────────────────────────────────
 
 let lastShortcut = getSettingsSafe().shortcut;
+let lastScreenShortcut = getSettingsSafe().shortcutScreen;
 let lastPress = 0;
 let holdVotes = 0;
 let holdTimer: NodeJS.Timeout | null = null;
@@ -332,8 +422,21 @@ function getSettingsSafe() {
   try {
     return getSettings();
   } catch {
-    return { shortcut: 'CommandOrControl+Shift+Space' } as ReturnType<typeof getSettings>;
+    return {
+      shortcut: 'CommandOrControl+Shift+Space',
+      shortcutScreen: 'CommandOrControl+Shift+R',
+    } as ReturnType<typeof getSettings>;
   }
+}
+
+/**
+ * Why the registration failed. "Another app already uses it" is the common
+ * cause but not the only one, and the wrong message sends you hunting for a
+ * conflict that does not exist: Windows always refuses a bare F12–F24.
+ */
+function refusalReason(acc: string): string {
+  if (/^F(1[2-9]|2[0-4])$/.test(acc)) return `${acc} cannot go alone on Windows. Add Ctrl, Alt or Shift`;
+  return `another app already uses ${acc}`;
 }
 
 /**
@@ -358,13 +461,13 @@ function registerShortcut(accelerator?: string): boolean {
       const repeat = now - lastPress < 350;
       lastPress = now;
 
-      if (!state.recording) {
+      if (!state.recording && !state.preparing) {
         if (state.transcribing) return;
         holdVotes = 0;
         void start({ kind: 'audio', dictation: true });
         return;
       }
-      if (repeat) {
+      if (repeat && state.recording) {
         holdVotes++;
         if (holdTimer) clearTimeout(holdTimer);
         holdTimer = setTimeout(() => {
@@ -380,8 +483,42 @@ function registerShortcut(accelerator?: string): boolean {
   if (ok) lastShortcut = acc;
   // Falhar calado seria o pior caso: você aperta, nada acontece, e não há onde
   // ler por quê. A interface mostra este texto.
-  state = { ...state, shortcut: ok ? acc : null, error: ok ? null : `another app already uses ${acc}` };
+  state = { ...state, shortcut: ok ? acc : null, error: ok ? null : refusalReason(acc) };
+  // Os dois atalhos vivem no mesmo registro, e `unregisterAll()` derruba ambos.
+  // Reregistrar o de tela aqui é o que impede ele de sumir calado toda vez que
+  // você troca o do ditado.
+  registerScreenShortcut(undefined, true);
   push('state');
+  return ok;
+}
+
+/**
+ * Tela: toque alterna, e só. Sem push-to-talk (segurar não quer dizer nada numa
+ * gravação de tela) e sem ditado — o que sai daqui é arquivo, não texto colado.
+ * Separado do outro de propósito: um atalho que às vezes dita e às vezes grava
+ * a tela é um atalho que você testa antes de usar, e o valor dele é justamente
+ * poder apertar sem pensar.
+ */
+function registerScreenShortcut(accelerator?: string, quiet = false): boolean {
+  const acc = accelerator || lastScreenShortcut || 'CommandOrControl+Shift+R';
+  if (!quiet) globalShortcut.unregister(lastScreenShortcut);
+  let ok = false;
+  try {
+    ok = globalShortcut.register(acc, () => {
+      if (state.transcribing) return;
+      if (state.recording || state.preparing) {
+        stop();
+        return;
+      }
+      void start({ kind: 'screen', dictation: false });
+    });
+  } catch {
+    ok = false;
+  }
+  if (ok) lastScreenShortcut = acc;
+  state = { ...state, shortcutScreen: ok ? acc : null };
+  if (!ok && !quiet) state = { ...state, error: refusalReason(acc) };
+  if (!quiet) push('state');
   return ok;
 }
 
@@ -398,7 +535,8 @@ function registerMediaProtocol(): void {
   protocol.handle('media', async (request) => {
     const url = new URL(request.url);
     const [id, ext] = `${url.hostname}${url.pathname}`.replace(/^\/+/, '').split('.');
-    if (!isValidId(id) || (ext !== 'mp3' && ext !== 'mp4')) return new Response('bad request', { status: 400 });
+    if (!isValidId(id) || (ext !== 'mp3' && ext !== 'mp4' && ext !== 'jpg'))
+      return new Response('bad request', { status: 400 });
     const file = mediaPath(id, ext);
     if (!existsSync(file)) return new Response('not found', { status: 404 });
     return net.fetch(pathToFileURL(file).toString());
@@ -422,17 +560,18 @@ function registerIpc(): void {
         (s) => ({ id: s.id, name: s.name, isScreen: s.id.startsWith('screen') }),
       ),
     'rec:shortcut': (_e, acc: string) => registerShortcut(typeof acc === 'string' ? acc : undefined),
+    'rec:shortcutScreen': (_e, acc: string) => registerScreenShortcut(typeof acc === 'string' ? acc : undefined),
     // Enquanto o campo de captura está focado, o atalho ANTIGO sai do ar: sem
     // isso, apertar a combinação atual pra reconfirmar dispararia uma gravação
     // em vez de ser lida pelo campo.
     'rec:shortcutPause': (_e, pause: boolean) => {
       if (pause) {
         globalShortcut.unregisterAll();
-        state = { ...state, shortcut: null };
+        state = { ...state, shortcut: null, shortcutScreen: null };
         push('state');
         return true;
       }
-      return registerShortcut(lastShortcut);
+      return registerShortcut(lastShortcut);   // devolve os dois: ver o comentário lá dentro
     },
 
     'sessions:list': (_e, q: string) => ({
@@ -441,6 +580,7 @@ function registerIpc(): void {
     }),
     'sessions:get': (_e, id: string) => getSession(id),
     'sessions:remove': (_e, id: string) => removeSession(id),
+    'sessions:retranscribe': (_e, id: string) => retranscribe(id),
     'sessions:reveal': (_e, id: string) => {
       if (!isValidId(id)) return false;
       const mp3 = mediaPath(id, 'mp3');
@@ -480,12 +620,22 @@ function registerIpc(): void {
     if (payload?.error) {
       capture?.stream.destroy();
       capture = null;
-      state = { ...state, recording: false, transcribing: false, error: payload.error, last: { error: payload.error } };
+      state = {
+        ...state, preparing: false, recording: false, transcribing: false,
+        error: payload.error, last: { error: payload.error, at: Date.now() },
+      };
       hidePill();
       push('state');
       return;
     }
     void finish(Number(payload?.durMs) || 0);
+  });
+  // O renderer confirma que o MediaRecorder ENTROU em gravação. É só aqui que o
+  // cronômetro pode começar: o instante do toque não é o instante da captura.
+  ipcMain.on('recorder:armed', () => {
+    if (!state.preparing) return;
+    state = { ...state, preparing: false, recording: true, since: Date.now() };
+    push('state');
   });
   ipcMain.on('recorder:level', (_e, v: number) => push('level', Number(v) || 0));
 }
@@ -549,6 +699,9 @@ if (!app.requestSingleInstanceLock()) {
 
     registerIpc();
     createMainWindow();
+    // O de tela vai junto (registerShortcut reregistra os dois), mas a escolha
+    // guardada precisa chegar antes: senão o primeiro registro usa o padrão.
+    lastScreenShortcut = getSettings().shortcutScreen;
     registerShortcut(getSettings().shortcut);
     ensureRecorder(); // pré-aquece: a primeira gravação não espera um renderer subir
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, ChevronDown, Copy, FileAudio, FileVideo, Keyboard,
-  Mic, MonitorPlay, Plus, Search, Settings2, Sparkles, Square, Trash2, Volume2, X,
+  AlertTriangle, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, FileAudio, FileVideo,
+  Keyboard, LayoutGrid, List, Mic, MonitorPlay, Play, Plus, RotateCcw, Search, Settings2,
+  Sparkles, Square, Trash2, Volume2, X,
 } from 'lucide-react';
 import type { RecorderState, Session, SessionSummary, Settings, WordCandidate } from '@stalkier/core';
 import type { MonthUsage, RecorderApi } from './api.js';
@@ -65,6 +66,14 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Session | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // Grade por padrão: o que se procura numa gravação de tela é a IMAGEM. A
+  // lista continua ali porque ditado é texto, e texto se lê em linha.
+  const [view, setView] = useState<'grid' | 'list'>(() => {
+    try { return localStorage.getItem('rec:view') === 'list' ? 'list' : 'grid'; } catch { return 'grid'; }
+  });
+  const [player, setPlayer] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(0);
 
   const [words, setWords] = useState<WordCandidate[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -137,6 +146,16 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
     };
   }, [load, loadWords, query]);
 
+  // Enquanto alguma sessão está sendo transcrita, a lista se atualiza sozinha.
+  // Sem isto o card fica em "transcrevendo" até você mexer na tela — e a
+  // gravação parece travada quando na verdade já terminou.
+  const processing = sessions.some((s) => s.status === 'processing');
+  useEffect(() => {
+    if (!processing) return;
+    const t = setInterval(() => void load(query), 2500);
+    return () => clearInterval(t);
+  }, [processing, load, query]);
+
   // Cronômetro: só existe enquanto grava.
   useEffect(() => {
     if (!state?.recording) return;
@@ -145,13 +164,23 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
   }, [state?.recording]);
 
   const recording = !!state?.recording;
+  const preparing = !!state?.preparing;
   const transcribing = !!state?.transcribing;
   const noKey = settings?.engine !== 'local' && !keyHint;
 
   const start = (kind: 'audio' | 'screen'): void => {
+    setDismissed(0);
     void api
       .start({ kind, mic: settings?.mic ?? true, system: settings?.system ?? false })
       .then(setState);
+  };
+
+  const retry = async (id: string): Promise<void> => {
+    setRetrying(id);
+    try { await api.retranscribe(id); } catch { /* o card já mostra o motivo */ }
+    setRetrying(null);
+    void load(query);
+    loadWords();
   };
   const stop = (): void => void api.stop().then(setState);
   const cancel = (): void => void api.cancel().then(setState);
@@ -212,6 +241,15 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '18px 24px 40px' }}>
       <style>{`
         .row { transition: background-color var(--dur-fast) ease; }
+        /* O card inteiro é o alvo: a capa é o botão, e o hover levanta a peça
+           em vez de pintar um fundo — numa grade, fundo colorido brigaria com
+           a própria imagem do vídeo. */
+        .card { transition: border-color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-out); }
+        .card:hover { transform: translateY(-2px); }
+        .card:hover .actions, .card:focus-within .actions { opacity: 1; }
+        .card .play { opacity: 0; transition: opacity var(--dur-fast) ease; }
+        .card:hover .play, .card:focus-within .play { opacity: 1; }
+        @media (hover: none) { .card .play { opacity: 1; } }
         .row:hover { background: var(--surface-2); }
         .row:hover .actions, .row:focus-within .actions { opacity: 1; }
         .actions { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
@@ -231,7 +269,8 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
         .wave[data-mode="sweep"] > span { animation: sweep 1.05s ease-in-out infinite; }
         .skeleton { animation: breathe 1.4s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .row, .actions, .primary, .seg, .panel-in { transition-duration: .01ms; animation-duration: .01ms; }
+          .row, .actions, .primary, .seg, .panel-in, .card, .card .play { transition-duration: .01ms; animation-duration: .01ms; }
+          .card:hover { transform: none; }
           .skeleton { animation: none; }
           .wave[data-mode="sweep"] > span { animation: none; transform: scaleY(0.6); opacity: 0.6; }
         }
@@ -239,7 +278,24 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
 
       {/* ─── Controle: o único primário da tela ─── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        {recording ? (
+        {preparing ? (
+          // Entre o toque e a captura. Sem cronômetro de propósito: não existe
+          // gravação ainda, e um contador correndo aqui seria mentira. O botão
+          // continua sendo o de parar, porque é isso que você vai querer se o
+          // picker do sistema não abrir.
+          <>
+            <button className="primary" onClick={cancel} autoFocus
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, height: 44, padding: '0 18px', borderRadius: 10,
+                border: '1px solid var(--yellow)', background: 'var(--surface)', color: 'var(--text)',
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}>
+              <Wave mode="sweep" color="var(--yellow)" bars={5} />
+              {state?.kind === 'screen' ? t.preparingScreen : t.preparing}
+            </button>
+            <span style={{ fontSize: 11.5, color: 'var(--faint)' }}>{t.escDiscards}</span>
+          </>
+        ) : recording ? (
           <>
             <button className="primary" onClick={stop} autoFocus
               style={{
@@ -280,6 +336,10 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
                 fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}>
               <MonitorPlay size={15} /> {t.withScreen}
+              {/* O atalho vive NO botão. É a única forma de você aprender que dá
+                  pra gravar a tela sem trazer esta janela pra frente — que é o
+                  caso em que gravar a tela serve pra alguma coisa. */}
+              {state?.shortcutScreen && <kbd style={kbd}>{readable(state.shortcutScreen)}</kbd>}
             </button>
           </>
         )}
@@ -337,24 +397,45 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
 
       {settingsOpen && settings && (
         <SettingsPanel
-          settings={settings} keyHint={keyHint} encrypted={encrypted} shortcut={state?.shortcut ?? null} t={t} api={api}
+          settings={settings} keyHint={keyHint} encrypted={encrypted}
+          shortcut={state?.shortcut ?? null} shortcutScreen={state?.shortcutScreen ?? null} t={t} api={api}
           onSave={save} onClose={() => setSettingsOpen(false)}
           onKey={async (k) => { await api.setKey(k); loadSettings(); }}
           onShortcut={(acc) => { void save({ shortcut: acc }); void api.shortcut(acc).then(() => api.state().then((s) => setState(s as RecorderState))); }}
+          onShortcutScreen={(acc) => { void save({ shortcutScreen: acc }); void api.shortcutScreen(acc).then(() => api.state().then((s) => setState(s as RecorderState))); }}
           onPause={(v) => void api.pauseShortcut(v).then(() => api.state().then((s) => setState(s as RecorderState)))}
         />
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: words.length ? 'minmax(0, 1fr) 232px' : 'minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ position: 'relative', marginBottom: 10 }}>
-            <Search size={13} color="var(--faint)" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
-            <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)}
-              placeholder={t.search}
-              style={{
-                width: '100%', padding: '8px 11px 8px 32px', background: 'var(--surface)',
-                border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 13,
-              }} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+              <Search size={13} color="var(--faint)" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)' }} />
+              <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)}
+                placeholder={t.search}
+                style={{
+                  width: '100%', padding: '8px 11px 8px 32px', background: 'var(--surface)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 13,
+                }} />
+            </div>
+            {/* Duas visualizações porque são dois conteúdos: gravação de tela se
+                reconhece pela imagem, ditado se reconhece pela frase. */}
+            <div style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)' }}>
+              {(['grid', 'list'] as const).map((v) => (
+                <button key={v} className="seg" aria-pressed={view === v}
+                  onClick={() => { setView(v); try { localStorage.setItem('rec:view', v); } catch { /* modo anônimo */ } }}
+                  title={v === 'grid' ? t.viewGrid : t.viewList} aria-label={v === 'grid' ? t.viewGrid : t.viewList}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 30,
+                    borderRadius: 7, border: 'none', cursor: 'pointer',
+                    background: view === v ? 'var(--surface-3)' : 'transparent',
+                    color: view === v ? 'var(--text)' : 'var(--faint)',
+                  }}>
+                  {v === 'grid' ? <LayoutGrid size={14} /> : <List size={14} />}
+                </button>
+              ))}
+            </div>
           </div>
 
           {error ? (
@@ -373,6 +454,14 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
                 )}
               </div>
             </div>
+          ) : view === 'grid' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(196px, 1fr))', gap: 12 }}>
+              {(recording || preparing || transcribing) && <LiveCard t={t} state={state} />}
+              {sessions.map((s) => (
+                <Card key={s.id} s={s} t={t} api={api} retrying={retrying === s.id}
+                  onOpen={() => setPlayer(s.id)} onRetry={() => void retry(s.id)} onRemove={() => void remove(s)} />
+              ))}
+            </div>
           ) : (
             <div style={{ ...panel, overflow: 'hidden' }}>
               {/* A linha em processamento tem a MESMA anatomia da linha pronta:
@@ -390,7 +479,8 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
               {sessions.map((s, i) => (
                 <Row key={s.id} s={s} t={t} api={api} last={i === sessions.length - 1}
                   open={openId === s.id} detail={openId === s.id ? detail : null} copied={copied === s.id}
-                  onOpen={() => void open(s.id)} onCopy={(t) => copy(s.id, t)} onRemove={() => void remove(s)} />
+                  retrying={retrying === s.id} onRetry={() => void retry(s.id)}
+                  onOpen={() => void open(s.id)} onCopy={(text) => copy(s.id, text)} onRemove={() => void remove(s)} />
               ))}
             </div>
           )}
@@ -426,6 +516,22 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
           </aside>
         )}
       </div>
+
+      {/* Resultado da última gravação. É o par do "deu certo/deu errado": a
+          pílula some quando a gravação termina, e sem isto não sobra nada
+          dizendo se o arquivo existe. */}
+      {state?.last && state.last.at !== dismissed && !recording && !preparing && !transcribing && (
+        <Result last={state.last} t={t} onOpen={(id) => { setPlayer(id); setDismissed(state.last!.at || 0); }}
+          onClose={() => setDismissed(state.last?.at || 0)} />
+      )}
+
+      {player && (
+        <Player id={player} sessions={sessions} api={api} t={t}
+          onClose={() => setPlayer(null)}
+          onGo={(id) => setPlayer(id)}
+          onRetry={(id) => void retry(id)}
+          retrying={retrying} />
+      )}
     </div>
   );
 }
@@ -479,9 +585,9 @@ function Source({ on, onClick, icon, name, t }: { on: boolean; onClick: () => vo
   );
 }
 
-function Row({ s, t, api, last, open, detail, copied, onOpen, onCopy, onRemove }: {
+function Row({ s, t, api, last, open, detail, copied, retrying, onRetry, onOpen, onCopy, onRemove }: {
   s: SessionSummary; t: Strings; api: RecorderApi; last: boolean; open: boolean;
-  detail: Session | null; copied: boolean;
+  detail: Session | null; copied: boolean; retrying: boolean; onRetry: () => void;
   onOpen: () => void; onCopy: (text: string) => void; onRemove: () => void;
 }): JSX.Element {
   const text = detail?.text || s.preview || '';
@@ -502,10 +608,17 @@ function Row({ s, t, api, last, open, detail, copied, onOpen, onCopy, onRemove }
                 textura. "local" é o que explica a demora e o custo zero. */}
             {s.engine === 'local' && <span style={{ color: 'var(--yellow)' }}>{t.localEngine}</span>}
             {s.kind === 'dictation' && <span>{t.dictation}</span>}
+            {s.status === 'processing' && <span style={{ color: 'var(--accent)' }}>{t.processing}</span>}
+            {s.status === 'failed' && <span style={{ color: 'var(--red)' }} title={t.failedHint(s.error || '')}>{t.failed}</span>}
           </span>
         </button>
 
         <div className="actions" style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+          {s.status === 'failed' && (
+            <button className="icon-btn" onClick={onRetry} disabled={retrying} title={t.retry} aria-label={t.retry}>
+              <RotateCcw size={14} />
+            </button>
+          )}
           <button className="icon-btn" onClick={() => onCopy(text)} title={t.copy} aria-label={t.copy}>
             {copied ? <Check size={14} color="var(--accent)" /> : <Copy size={14} />}
           </button>
@@ -575,8 +688,9 @@ function Row({ s, t, api, last, open, detail, copied, onOpen, onCopy, onRemove }
  *   3. usa `e.code`, não `e.key` — com Ctrl+Shift apertado o `key` vem como o
  *      caractere transformado, e o acelerador quer a tecla física.
  */
-function ShortcutCapture({ shortcut, t, onShortcut, onPause }: {
-  shortcut: string | null; t: Strings; onShortcut: (acc: string) => void; onPause: (v: boolean) => void;
+function ShortcutCapture({ shortcut, t, hint, onShortcut, onPause }: {
+  shortcut: string | null; t: Strings; hint?: string;
+  onShortcut: (acc: string) => void; onPause: (v: boolean) => void;
 }): JSX.Element {
   const [capturing, setCapturing] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
@@ -600,9 +714,12 @@ function ShortcutCapture({ shortcut, t, onShortcut, onPause }: {
     else if (c === 'Space') key = 'Space';
     if (!key) { setWarning(t.shortcutBadKey); return; }
 
-    // Tecla de função é a única que pode andar sozinha: F9 não aparece no meio
-    // de um texto, então sequestrá-la globalmente não custa nada.
-    if (!mods.length && !/^F\d{1,2}$/.test(key)) { setWarning(t.shortcutNeedsModifier); return; }
+    // Tecla de função pode andar sozinha — mas só até F11. O Windows reserva o
+    // F12 pro debugger e RECUSA F13 a F24 sem modificador (medido: registrar
+    // devolve falso, sem conflito nenhum). Deixar escolher aqui só empurraria a
+    // descoberta pra depois, na forma de um atalho que não faz nada.
+    const soltaProibida = /^F(1[2-9]|2[0-4])$/.test(key);
+    if (!mods.length && (!/^F\d{1,2}$/.test(key) || soltaProibida)) { setWarning(t.shortcutNeedsModifier); return; }
 
     setWarning(null);
     onShortcut([...mods, key].join('+'));
@@ -635,17 +752,19 @@ function ShortcutCapture({ shortcut, t, onShortcut, onPause }: {
         )}
       </div>
       <span style={{ fontSize: 11.5, color: warning ? 'var(--yellow)' : 'var(--faint)', maxWidth: 260, lineHeight: 1.5 }}>
-        {warning || t.shortcutHint}
+        {warning || hint || t.shortcutHint}
       </span>
     </div>
   );
 }
 
-function SettingsPanel({ settings, keyHint, encrypted, shortcut, t, api, onSave, onClose, onKey, onShortcut, onPause }: {
-  settings: Settings; keyHint: string | null; encrypted: boolean; shortcut: string | null;
+function SettingsPanel({ settings, keyHint, encrypted, shortcut, shortcutScreen, t, api, onSave, onClose, onKey, onShortcut, onShortcutScreen, onPause }: {
+  settings: Settings; keyHint: string | null; encrypted: boolean;
+  shortcut: string | null; shortcutScreen: string | null;
   t: Strings; api: RecorderApi;
   onSave: (p: Partial<Settings>) => Promise<void>; onClose: () => void;
-  onKey: (key: string) => Promise<void>; onShortcut: (acc: string) => void; onPause: (v: boolean) => void;
+  onKey: (key: string) => Promise<void>; onShortcut: (acc: string) => void;
+  onShortcutScreen: (acc: string) => void; onPause: (v: boolean) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState('');
   const [test, setTest] = useState<null | { ok: boolean; error?: string }>(null);
@@ -719,6 +838,14 @@ function SettingsPanel({ settings, keyHint, encrypted, shortcut, t, api, onSave,
 
       <div>
         <div style={{ ...subLabel, marginBottom: 7, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MonitorPlay size={12} /> {t.shortcutScreenLabel}
+        </div>
+        <ShortcutCapture shortcut={shortcutScreen} t={t} hint={t.shortcutScreenHint}
+          onShortcut={onShortcutScreen} onPause={onPause} />
+      </div>
+
+      <div>
+        <div style={{ ...subLabel, marginBottom: 7, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Sparkles size={12} /> {t.libraryLabel}
           <span style={{ ...mono, fontSize: 10.5, color: 'var(--faint)' }}>{terms.length}</span>
         </div>
@@ -771,5 +898,327 @@ function Toggle({ label: text, hint, on, onToggle }: { label: string; hint: stri
         <span style={{ display: 'block', fontSize: 11.5, color: 'var(--faint)', lineHeight: 1.5 }}>{hint}</span>
       </span>
     </button>
+  );
+}
+
+// ─── Galeria ─────────────────────────────────────────────────────────────────
+
+const mb = (bytes: number): string => (bytes / 1_048_576).toFixed(bytes > 10_485_760 ? 0 : 1);
+
+/**
+ * O card. A capa é o conteúdo: cinco gravações de tela do mesmo dia são cinco
+ * linhas idênticas numa lista, e cinco imagens diferentes numa grade.
+ *
+ * Sem capa (áudio, ditado, ou o ffmpeg que não gerou) o lugar dela NÃO fica
+ * vazio: entra a onda estática, que ocupa a mesma caixa. Card sem imagem no
+ * meio de cards com imagem lê como card quebrado.
+ */
+function Card({ s, t, api, retrying, onOpen, onRetry, onRemove }: {
+  s: SessionSummary; t: Strings; api: RecorderApi; retrying: boolean;
+  onOpen: () => void; onRetry: () => void; onRemove: () => void;
+}): JSX.Element {
+  const failed = s.status === 'failed';
+  const busy = s.status === 'processing';
+
+  return (
+    <div className="card" style={{
+      ...panel, overflow: 'hidden', position: 'relative',
+      borderColor: failed ? 'var(--red)' : 'var(--border)',
+    }}>
+      <button onClick={onOpen} aria-label={t.play}
+        style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        <div style={{
+          position: 'relative', aspectRatio: '16 / 9', background: 'var(--bg)',
+          borderBottom: '1px solid var(--border-soft)', overflow: 'hidden',
+        }}>
+          {s.hasPoster ? (
+            <img src={api.mediaUrl(s.id, 'jpg')} alt="" loading="lazy"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ) : (
+            // Sem capa (áudio, ditado, ou vídeo antigo): o lugar dela não fica
+            // vazio. Um retângulo preto no meio de capas lê como card quebrado,
+            // então entra o ícone da fonte sobre um fundo que é claramente
+            // um fundo, e não uma imagem que não carregou.
+            <span style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+              color: 'var(--faint)',
+            }}>
+              {s.hasVideo ? <MonitorPlay size={26} /> : <Mic size={26} />}
+            </span>
+          )}
+          <span className="play" style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'color-mix(in srgb, var(--bg) 45%, transparent)',
+          }}>
+            <Play size={22} fill="var(--text)" color="var(--text)" />
+          </span>
+          {/* Duração no canto, como em qualquer galeria de vídeo. É o dado que
+              você usa pra escolher, e no rodapé competiria com a frase. */}
+          <span style={{
+            ...num, position: 'absolute', right: 6, bottom: 6, fontSize: 10.5, padding: '1px 5px',
+            borderRadius: 4, background: 'color-mix(in srgb, #000 62%, transparent)', color: '#fff',
+          }}>{mmss(s.durMs)}</span>
+          <span style={{
+            position: 'absolute', left: 6, top: 6, display: 'inline-flex', alignItems: 'center', gap: 4,
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+            padding: '2px 6px', borderRadius: 4,
+            background: 'color-mix(in srgb, #000 62%, transparent)', color: '#fff',
+          }}>
+            {s.hasVideo ? <MonitorPlay size={10} /> : <Mic size={10} />}
+            {s.hasVideo ? t.screenBadge : s.kind === 'dictation' ? t.dictation : t.mic}
+          </span>
+        </div>
+
+        <div style={{ padding: '9px 11px 10px' }}>
+          <span style={{
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            fontSize: 12.5, lineHeight: 1.45, color: s.preview ? 'var(--text)' : 'var(--faint)',
+            minHeight: 36,
+          }}>
+            {busy ? t.processing : s.preview || (failed ? t.failed : t.noSpeech)}
+          </span>
+          <span style={{ ...num, display: 'flex', gap: 7, marginTop: 6, fontSize: 10.5, color: 'var(--faint)' }}>
+            <span>{when(s.createdAt, t)}</span>
+            {s.sizeBytes > 0 && <span>{t.size(mb(s.sizeBytes))}</span>}
+            {s.engine === 'local' && <span style={{ color: 'var(--yellow)' }}>{t.localEngine}</span>}
+          </span>
+        </div>
+      </button>
+
+      {/* Estado do TEXTO, nunca da mídia: o vídeo está salvo nos três casos, e
+          é por isso que a falha aparece como faixa no card e não como card
+          cinza. Perder a transcrição não é perder a gravação. */}
+      {busy && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 11px', borderTop: '1px solid var(--border-soft)' }}>
+          <Wave mode="sweep" color="var(--accent)" bars={4} />
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t.processing}</span>
+        </div>
+      )}
+      {failed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px 6px 11px', borderTop: '1px solid var(--border-soft)', background: 'var(--red-dim)' }}>
+          <AlertTriangle size={12} color="var(--red)" style={{ flexShrink: 0 }} />
+          <span title={t.failedHint(s.error || '')}
+            style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {t.failed}
+          </span>
+          <button onClick={onRetry} disabled={retrying}
+            style={{ marginLeft: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--text)', fontSize: 11, fontWeight: 600, cursor: retrying ? 'default' : 'pointer' }}>
+            <RotateCcw size={11} /> {retrying ? t.retrying : t.retry}
+          </button>
+        </div>
+      )}
+
+      <div className="actions" style={{ position: 'absolute', right: 5, top: 5, display: 'flex', gap: 2 }}>
+        <a className="icon-btn" style={{ background: 'color-mix(in srgb, #000 55%, transparent)' }}
+          href={api.mediaUrl(s.id, s.hasVideo ? 'mp4' : 'mp3')} download={`${s.id}.${s.hasVideo ? 'mp4' : 'mp3'}`}
+          title={s.hasVideo ? t.downloadMp4 : t.downloadMp3} aria-label={s.hasVideo ? t.downloadMp4 : t.downloadMp3}>
+          {s.hasVideo ? <FileVideo size={13} /> : <FileAudio size={13} />}
+        </a>
+        <button className="icon-btn" data-danger="" style={{ background: 'color-mix(in srgb, #000 55%, transparent)' }}
+          onClick={onRemove} title={t.remove} aria-label={t.remove}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * O card da gravação que está acontecendo AGORA, na mesma caixa das outras.
+ * Existe pra grade não saltar quando a sessão chega: sem ele o primeiro card
+ * empurra a grade inteira no instante em que você está lendo.
+ */
+function LiveCard({ t, state }: { t: Strings; state: RecorderState | null }): JSX.Element {
+  const rec = !!state?.recording;
+  const color = rec ? 'var(--red)' : 'var(--yellow)';
+  return (
+    <div style={{ ...panel, overflow: 'hidden', borderColor: color }}>
+      <div style={{
+        position: 'relative', aspectRatio: '16 / 9', background: 'var(--bg)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Wave mode="sweep" color={color} bars={9} />
+        <span style={{
+          position: 'absolute', left: 6, top: 6, display: 'inline-flex', alignItems: 'center', gap: 5,
+          fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase',
+          padding: '2px 7px', borderRadius: 4, background: 'color-mix(in srgb, #000 62%, transparent)', color: '#fff',
+        }}>
+          <span className={rec ? 'skeleton' : undefined}
+            style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
+          {state?.kind === 'screen' ? t.screenBadge : t.mic}
+        </span>
+      </div>
+      <div style={{ padding: '9px 11px 10px' }}>
+        <span className="skeleton" style={{ display: 'block', height: 9, width: '70%', borderRadius: 3, background: 'var(--surface-3)' }} />
+        <span style={{ ...num, display: 'block', marginTop: 9, fontSize: 10.5, color: 'var(--faint)' }}>
+          {state?.preparing ? t.preparing : rec ? t.stop.toLowerCase() : t.processing}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * O player. Modal, e não expansão dentro da grade: expandir um card empurra a
+ * linha inteira e move os outros de lugar, que é a coisa mais desorientadora
+ * que uma galeria pode fazer.
+ *
+ * ←/→ andam entre as gravações sem fechar. Esc fecha.
+ */
+function Player({ id, sessions, api, t, onClose, onGo, onRetry, retrying }: {
+  id: string; sessions: SessionSummary[]; api: RecorderApi; t: Strings;
+  onClose: () => void; onGo: (id: string) => void; onRetry: (id: string) => void; retrying: string | null;
+}): JSX.Element | null {
+  const [detail, setDetail] = useState<Session | null>(null);
+  const media = useRef<HTMLVideoElement & HTMLAudioElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  const i = sessions.findIndex((x) => x.id === id);
+  const s = sessions[i];
+
+  useEffect(() => {
+    setDetail(null);
+    void api.getSession(id).then(setDetail);
+  }, [id, api]);
+
+  useEffect(() => { box.current?.focus(); }, [id]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      // Seta só navega quando o foco NÃO está no player: dentro do <video> ela
+      // é o atalho nativo de avançar 5 segundos, e sequestrar isso seria trocar
+      // um controle que todo mundo conhece por um que ninguém pediu.
+      const tag = document.activeElement?.tagName;
+      if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'INPUT') return;
+      if (e.key === 'ArrowRight' && sessions[i + 1]) { e.preventDefault(); onGo(sessions[i + 1].id); }
+      if (e.key === 'ArrowLeft' && sessions[i - 1]) { e.preventDefault(); onGo(sessions[i - 1].id); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [i, sessions, onClose, onGo]);
+
+  if (!s) return null;
+  const src = api.mediaUrl(s.id, s.hasVideo ? 'mp4' : 'mp3');
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={s.preview || t.play}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, background: 'color-mix(in srgb, #000 72%, transparent)', backdropFilter: 'blur(3px)',
+      }}>
+      <div ref={box} tabIndex={-1} className="panel-in"
+        style={{
+          ...panel, outline: 'none', width: 'min(940px, 100%)', maxHeight: '100%',
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 10px 10px 14px', borderBottom: '1px solid var(--border-soft)' }}>
+          <span style={{ ...num, fontSize: 11.5, color: 'var(--faint)', display: 'flex', gap: 8 }}>
+            <span>{when(s.createdAt, t)}</span>
+            <span>{mmss(s.durMs)}</span>
+            {s.sizeBytes > 0 && <span>{t.size(mb(s.sizeBytes))}</span>}
+          </span>
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
+            <button className="icon-btn" onClick={() => sessions[i - 1] && onGo(sessions[i - 1].id)}
+              disabled={!sessions[i - 1]} title={t.prev} aria-label={t.prev}><ChevronLeft size={15} /></button>
+            <button className="icon-btn" onClick={() => sessions[i + 1] && onGo(sessions[i + 1].id)}
+              disabled={!sessions[i + 1]} title={t.next} aria-label={t.next}><ChevronRight size={15} /></button>
+            <a className="icon-btn" href={src} download={`${s.id}.${s.hasVideo ? 'mp4' : 'mp3'}`}
+              title={s.hasVideo ? t.downloadMp4 : t.downloadMp3} aria-label={s.hasVideo ? t.downloadMp4 : t.downloadMp3}>
+              {s.hasVideo ? <FileVideo size={14} /> : <FileAudio size={14} />}
+            </a>
+            <button className="icon-btn" onClick={onClose} title={t.close} aria-label={t.close}><X size={15} /></button>
+          </span>
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: 14 }}>
+          {s.hasVideo ? (
+            <video ref={media} controls autoPlay src={src}
+              style={{ width: '100%', maxHeight: '52vh', borderRadius: 8, background: '#000', display: 'block' }} />
+          ) : (
+            <audio ref={media} controls autoPlay src={src} style={{ width: '100%', height: 36 }} />
+          )}
+
+          {s.status === 'failed' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14, padding: '10px 12px', borderRadius: 8, background: 'var(--red-dim)' }}>
+              <AlertTriangle size={15} color="var(--red)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>{t.failedHint(s.error || '')}</span>
+              <button onClick={() => onRetry(s.id)} disabled={retrying === s.id}
+                style={{ marginLeft: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', color: 'var(--text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <RotateCcw size={12} /> {retrying === s.id ? t.retrying : t.retry}
+              </button>
+            </div>
+          ) : !detail ? (
+            <div style={{ fontSize: 12, color: 'var(--faint)', padding: '14px 0 4px' }}>{t.opening}</div>
+          ) : (
+            <div style={{ display: 'grid', gap: 5, marginTop: 14, fontSize: 13, lineHeight: 1.65, color: 'var(--text)' }}>
+              {detail.segments?.length ? detail.segments.map((seg, k) => (
+                <p key={k} style={{ display: 'flex', gap: 9 }}>
+                  <button className="ts" style={{ ...num, fontSize: 10.5, paddingTop: 3, flexShrink: 0 }}
+                    onClick={() => { if (media.current) { media.current.currentTime = seg.start; void media.current.play(); } }}
+                    title={t.jumpTo}>
+                    {mmss(seg.start * 1000)}
+                  </button>
+                  <span>{seg.text}</span>
+                </p>
+              )) : <p>{detail.text || <em style={{ color: 'var(--faint)' }}>{t.silence}</em>}</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Deu certo ou deu errado, na hora. A pílula flutuante some quando a gravação
+ * termina, e antes disto não sobrava nada dizendo se o arquivo existe — você
+ * ficava com o silêncio, que é indistinguível de ter perdido tudo.
+ *
+ * Não desaparece sozinho no erro: aviso que some é aviso que você perdeu.
+ */
+function Result({ last, t, onOpen, onClose }: {
+  last: NonNullable<RecorderState['last']>; t: Strings;
+  onOpen: (id: string) => void; onClose: () => void;
+}): JSX.Element {
+  const err = last.error;
+
+  useEffect(() => {
+    if (err) return;
+    const timer = setTimeout(onClose, 6000);
+    return () => clearTimeout(timer);
+  }, [err, onClose]);
+
+  return (
+    <div role="status" aria-live="polite"
+      style={{
+        position: 'fixed', right: 20, bottom: 20, zIndex: 40, maxWidth: 380,
+        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px 10px 13px',
+        ...panel, borderColor: err ? 'var(--red)' : 'var(--border)',
+        boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+        animation: 'toast-in var(--dur-base) var(--ease-out)',
+      }}>
+      {err
+        ? <AlertTriangle size={15} color="var(--red)" style={{ flexShrink: 0 }} />
+        : <Check size={15} color="var(--accent)" style={{ flexShrink: 0 }} />}
+      <span style={{ fontSize: 12.5, color: 'var(--text)', lineHeight: 1.45, minWidth: 0 }}>
+        {err ? t.savedFail(err) : t.savedOk(mmss(last.durMs || 0))}
+        {!err && last.warning && (
+          <span style={{ display: 'block', fontSize: 11.5, color: 'var(--yellow)' }}>{t.noMicWarning}</span>
+        )}
+      </span>
+      {!err && last.id && (
+        <button onClick={() => onOpen(last.id as string)}
+          style={{ marginLeft: 'auto', flexShrink: 0, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          {t.openRecording}
+        </button>
+      )}
+      <button className="icon-btn" onClick={onClose} title={t.dismiss} aria-label={t.dismiss}
+        style={{ flexShrink: 0, marginLeft: err ? 'auto' : 0 }}>
+        <X size={13} />
+      </button>
+    </div>
   );
 }

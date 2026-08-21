@@ -88,22 +88,32 @@ async function begin(cfg: Config): Promise<void> {
       if (cfg.system && display.getAudioTracks().length) withAudio.push(display);
     }
     if (cfg.mic) {
-      const mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      streams.push(mic);
-      withAudio.push(mic);
+      // Microfone ausente ou ocupado NAO derruba uma gravacao de tela: voce
+      // fica com o video e o som do sistema, que e melhor do que ficar sem
+      // nada e descobrir depois. Numa gravacao so de audio, ai sim e fatal.
+      try {
+        const mic = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        streams.push(mic);
+        withAudio.push(mic);
+      } catch (e) {
+        if (!video && !withAudio.length) throw e;
+      }
     }
-    if (!withAudio.length) throw new Error('no audio source available');
+    // Video mudo e uma gravacao legitima (demo de tela sem narracao). O que nao
+    // existe e gravacao sem video E sem audio.
+    if (!withAudio.length && !video) throw new Error('no audio source available');
 
     ctx = new AudioContext();
     const dest = ctx.createMediaStreamDestination();
     const mix = ctx.createGain();
     mix.connect(dest);
     for (const s of withAudio) ctx.createMediaStreamSource(s).connect(mix);
-    meter(mix, ctx);
+    if (withAudio.length) meter(mix, ctx);
 
-    const finalStream = new MediaStream([...dest.stream.getAudioTracks(), ...(video ? [video] : [])]);
+    const audioTracks = withAudio.length ? dest.stream.getAudioTracks() : [];
+    const finalStream = new MediaStream([...audioTracks, ...(video ? [video] : [])]);
     const mime = pickMime(video ? VIDEO_MIMES : AUDIO_MIMES);
     recorder = new MediaRecorder(finalStream, {
       mimeType: mime || undefined,
@@ -119,8 +129,22 @@ async function begin(cfg: Config): Promise<void> {
       stopEverything();
       if (!cancelled) window.api.recorder.done({ durMs });
     };
+    // A captura pode acabar por fora: voce clica em "parar de compartilhar" na
+    // barra do Chromium, ou desconecta o monitor.
+    if (video) {
+      video.addEventListener('ended', () => {
+        try {
+          if (recorder && recorder.state !== 'inactive') recorder.stop();
+        } catch {
+          /* ja parado */
+        }
+      });
+    }
     startedAt = Date.now();
     recorder.start(3000);
+    // So AGORA existe gravacao: o processo principal sai de "preparando" e o
+    // cronometro comeca.
+    window.api.recorder.armed();
   } catch (e) {
     stopEverything();
     window.api.recorder.done({ error: String((e as Error).message || e) });

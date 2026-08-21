@@ -26,6 +26,7 @@
   --yellow: var(--color-yellow, #ffd60a);
   --red: var(--color-red, #ff453a);
   --red-dim: var(--color-red-dim, #3b110e);
+  --yellow-dim: var(--color-yellow-dim, #332b06);
 
   /* Motion, em peças. Nada de `transition: all`, que anima propriedade que
      ninguém pediu, layout incluído, e aí trava. */
@@ -42,6 +43,13 @@
   to { opacity: 1; transform: none; }
 }
 @keyframes breathe { 50% { opacity: 0.45; } }
+/* Aviso de resultado: sobe do canto e fica. Não desliza pela lateral — quem
+   entra pela borda da tela lê como notificação de sistema, e esta é a resposta
+   direta a uma ação sua. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
 /* Varredura: a barra cresce e apaga em onda. ease-in-out porque é movimento
    contínuo na tela, não entrada nem saída. */
 @keyframes sweep {

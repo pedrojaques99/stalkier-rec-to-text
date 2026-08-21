@@ -25,6 +25,7 @@ const api = {
     state: () => ipcRenderer.invoke('rec:state'),
     sources: () => ipcRenderer.invoke('rec:sources'),
     shortcut: (accelerator: string) => ipcRenderer.invoke('rec:shortcut', accelerator),
+    shortcutScreen: (accelerator: string) => ipcRenderer.invoke('rec:shortcutScreen', accelerator),
     pauseShortcut: (pause: boolean) => ipcRenderer.invoke('rec:shortcutPause', pause),
     onState: (cb: (s: never) => void) => on('state', cb),
     onLevel: (cb: (v: never) => void) => on('level', cb),
@@ -35,6 +36,8 @@ const api = {
     get: (id: string): Promise<Session | null> => ipcRenderer.invoke('sessions:get', id),
     remove: (id: string): Promise<boolean> => ipcRenderer.invoke('sessions:remove', id),
     reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('sessions:reveal', id),
+    retranscribe: (id: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('sessions:retranscribe', id),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
@@ -57,6 +60,8 @@ const api = {
     onStop: (cb: () => void) => on('recorder:stop', cb as (p: never) => void),
     onCancel: (cb: () => void) => on('recorder:cancel', cb as (p: never) => void),
     chunk: (buf: ArrayBuffer) => ipcRenderer.send('recorder:chunk', buf),
+    /** O MediaRecorder entrou em gravacao de verdade. */
+    armed: () => ipcRenderer.send('recorder:armed'),
     done: (payload: { durMs?: number; error?: string }) => ipcRenderer.send('recorder:done', payload),
     level: (v: number) => ipcRenderer.send('recorder:level', v),
   },
