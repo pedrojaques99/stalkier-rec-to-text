@@ -10,6 +10,6 @@
  * pro tema do app hospedeiro, então dentro do Studio a tela pega a paleta de lá
  * sem ninguém configurar nada.
  */
-export { Recorder, type RecorderProps } from './Recorder.js';
+export { Recorder, type RecorderProps, type ExtraShortcut } from './Recorder.js';
 export type { MonthUsage, RecorderApi, SettingsSnapshot } from './api.js';
 export { en, pt, type Strings } from './strings.js';

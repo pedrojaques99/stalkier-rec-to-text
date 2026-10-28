@@ -48,6 +48,19 @@ export interface RecorderProps {
   api: RecorderApi;
   /** Todo texto da tela. `en` e `pt` saem deste pacote. */
   t: Strings;
+  /**
+   * Atalhos globais do app hospedeiro que moram nos mesmos ajustes (o Studio
+   * põe o da órbita aqui). Mesmo campo de captura, mesma pausa enquanto focado.
+   */
+  extraShortcuts?: ExtraShortcut[];
+}
+
+export interface ExtraShortcut {
+  id: string;
+  label: string;
+  hint?: string;
+  value: string | null;
+  onChange: (acc: string) => void;
 }
 
 /**
@@ -55,7 +68,7 @@ export interface RecorderProps {
  * com o adaptador de IPC e o inglês, a aba do Jaques Studio com o adaptador
  * HTTP e o português. Layout, estados, teclado e decisões são um só.
  */
-export function Recorder({ api, t }: RecorderProps): JSX.Element {
+export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element {
   const [state, setState] = useState<RecorderState | null>(null);
   const [level, setLevel] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -399,6 +412,7 @@ export function Recorder({ api, t }: RecorderProps): JSX.Element {
         <SettingsPanel
           settings={settings} keyHint={keyHint} encrypted={encrypted}
           shortcut={state?.shortcut ?? null} shortcutScreen={state?.shortcutScreen ?? null} t={t} api={api}
+          extraShortcuts={extraShortcuts}
           onSave={save} onClose={() => setSettingsOpen(false)}
           onKey={async (k) => { await api.setKey(k); loadSettings(); }}
           onShortcut={(acc) => { void save({ shortcut: acc }); void api.shortcut(acc).then(() => api.state().then((s) => setState(s as RecorderState))); }}
@@ -758,9 +772,9 @@ function ShortcutCapture({ shortcut, t, hint, onShortcut, onPause }: {
   );
 }
 
-function SettingsPanel({ settings, keyHint, encrypted, shortcut, shortcutScreen, t, api, onSave, onClose, onKey, onShortcut, onShortcutScreen, onPause }: {
+function SettingsPanel({ settings, keyHint, encrypted, shortcut, shortcutScreen, extraShortcuts, t, api, onSave, onClose, onKey, onShortcut, onShortcutScreen, onPause }: {
   settings: Settings; keyHint: string | null; encrypted: boolean;
-  shortcut: string | null; shortcutScreen: string | null;
+  shortcut: string | null; shortcutScreen: string | null; extraShortcuts?: ExtraShortcut[];
   t: Strings; api: RecorderApi;
   onSave: (p: Partial<Settings>) => Promise<void>; onClose: () => void;
   onKey: (key: string) => Promise<void>; onShortcut: (acc: string) => void;
@@ -843,6 +857,15 @@ function SettingsPanel({ settings, keyHint, encrypted, shortcut, shortcutScreen,
         <ShortcutCapture shortcut={shortcutScreen} t={t} hint={t.shortcutScreenHint}
           onShortcut={onShortcutScreen} onPause={onPause} />
       </div>
+
+      {extraShortcuts?.map((x) => (
+        <div key={x.id}>
+          <div style={{ ...subLabel, marginBottom: 7, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Keyboard size={12} /> {x.label}
+          </div>
+          <ShortcutCapture shortcut={x.value} t={t} hint={x.hint} onShortcut={x.onChange} onPause={onPause} />
+        </div>
+      ))}
 
       <div>
         <div style={{ ...subLabel, marginBottom: 7, display: 'flex', alignItems: 'center', gap: 6 }}>
