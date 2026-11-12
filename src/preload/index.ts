@@ -38,6 +38,8 @@ const api = {
     reveal: (id: string): Promise<boolean> => ipcRenderer.invoke('sessions:reveal', id),
     retranscribe: (id: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('sessions:retranscribe', id),
+    edit: (id: string, html: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('sessions:edit', id, html),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

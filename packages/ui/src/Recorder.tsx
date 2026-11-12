@@ -1,12 +1,51 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, FileAudio, FileVideo,
-  Keyboard, LayoutGrid, List, Mic, MonitorPlay, Play, Plus, RotateCcw, Search, Settings2,
-  Sparkles, Square, Trash2, Volume2, X,
+  Clock, Keyboard, LayoutGrid, List, ListChecks, Mic, MonitorPlay, Play, Plus, RotateCcw, Search, Settings2,
+  AlignLeft,
+  Scissors, Sparkles, Square, Trash2, Volume2, X,
 } from 'lucide-react';
-import type { RecorderState, Session, SessionSummary, Settings, WordCandidate } from '@stalkier/core';
+import type { RecorderState, Session, SessionSummary, Settings, Sweep, TicStat, WordPanels, WordStat } from '@stalkier/core';
 import type { MonthUsage, RecorderApi } from './api.js';
+import type { Editor as TiptapEditor } from '@tiptap/react';
 import type { Strings } from './strings.js';
+import { tidyToText, tidyTranscript } from './tidy.js';
+import { TranscriptEditor } from './Transcript.js';
+import { SweepPanel } from './Sweep.js';
+/**
+ * O editor chega por um chunk separado, e chunk separado é uma requisição que
+ * pode falhar: rede caindo, deploy trocando o arquivo debaixo de uma aba
+ * aberta, dev server re-otimizando dependência. Sem esta cerca, a falha sobe
+ * pelo React e **apaga a tela inteira** — você perde a leitura, a transcrição e
+ * o diálogo, porque um botão opcional não carregou. Visto acontecer: tela preta,
+ * `Failed to fetch dynamically imported module`.
+ *
+ * Com a cerca, o que quebra é só o editor, e a mensagem diz o que fazer.
+ */
+class CercaDoEditor extends Component<{ children: React.ReactNode; aviso: string; onSair: () => void }, { caiu: boolean }> {
+  state = { caiu: false };
+  static getDerivedStateFromError(): { caiu: boolean } { return { caiu: true }; }
+  render(): React.ReactNode {
+    if (!this.state.caiu) return this.props.children;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', borderRadius: 8, background: 'var(--red-dim)' }}>
+        <AlertTriangle size={15} color="var(--red)" style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>{this.props.aviso}</span>
+        <button onClick={this.props.onSair}
+          style={{ marginLeft: 'auto', flexShrink: 0, background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', color: 'var(--text)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          <RotateCcw size={12} />
+        </button>
+      </div>
+    );
+  }
+}
+
+/**
+ * Sob demanda: o cropper e o wavesurfer somam ~90 kB, e quem abre uma gravação
+ * abre pra LER. Fazer todo mundo baixar o editor pra depois não usá-lo é cobrar
+ * de todos o preço de um botão. Chega no primeiro clique na tesoura.
+ */
+const QuickEdit = lazy(() => import('./QuickEdit.js').then((m) => ({ default: m.QuickEdit })));
 
 // ─── Tokens locais ───────────────────────────────────────────────────────────
 const label = { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)' } as const;
@@ -39,6 +78,13 @@ const when = (at: number, t: Strings): string => {
 // Centavo é a unidade real: dez minutos na nuvem custam US$0,0067. Mostrar
 // "$0.01" em tudo apagaria a diferença entre uma reunião e um ditado.
 const money$ = (usd: number): string => (usd >= 0.01 ? `$${usd.toFixed(2)}` : `${(usd * 100).toFixed(1)}¢`);
+
+/** Documento sem nada dentro, do jeito que o ProseMirror escreve. */
+const VAZIO = /^(<p>(\s|<br[^>]*>|&nbsp;)*<\/p>)?$/;
+
+/** O texto limpo entra no editor como HTML, então o que veio da fala é escapado antes. */
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const readable = (acc: string | null): string =>
   (acc || '').replace('CommandOrControl', navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl');
@@ -88,11 +134,13 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
   const [retrying, setRetrying] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(0);
 
-  const [words, setWords] = useState<WordCandidate[]>([]);
+  const [words, setWords] = useState<WordPanels | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [keyHint, setKeyHint] = useState<string | null>(null);
   const [encrypted, setEncrypted] = useState(true);
   const [ffmpeg, setFfmpeg] = useState(true);
+  // Só aparece o botão de varrer se houver chave de LLM do outro lado da rota.
+  const [canSweep, setCanSweep] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,6 +172,7 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
         setKeyHint(r.keyHint);
         setEncrypted(r.encrypted);
         setFfmpeg(r.ffmpeg);
+        setCanSweep(!!r.sweep);
       })
       .catch(() => {});
   }, []);
@@ -242,13 +291,15 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
     setSettings(await api.setSettings(patch));
   };
 
+  // A lateral só existe quando há o que pôr nela: coluna vazia rotulada é
+  // moldura de nada, e ainda rouba 232px da lista.
+  const temLateral = !!words && (words.teach.length > 0 || words.top.length > 0);
+
   const teach = async (term: string): Promise<void> => {
     const list = await api.getVocabulary();
     await api.setVocabulary([...new Set([...list, term])]);
-    setWords((w) => w.map((x) => (x.word === term ? { ...x, inLibrary: true } : x)));
+    setWords((w) => (w ? { ...w, teach: w.teach.map((x) => (x.word === term ? { ...x, inLibrary: true } : x)) } : w));
   };
-
-  const maxN = useMemo(() => Math.max(1, ...words.map((w) => w.n)), [words]);
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '18px 24px 40px' }}>
@@ -421,7 +472,7 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
         />
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: words.length ? 'minmax(0, 1fr) 232px' : 'minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: temLateral ? 'minmax(0, 1fr) 232px' : 'minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
@@ -501,32 +552,48 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
         </div>
 
         {/* Some quando não há nada: uma coluna vazia rotulada é moldura de nada. */}
-        {words.length > 0 && (
-          <aside>
-            {/* Não é "as palavras que você mais fala" — isso é curiosidade. É o
-                que o modelo provavelmente vai errar da próxima vez. O rótulo diz
-                a tarefa, não a métrica. */}
-            <div style={{ ...label, marginBottom: 9 }}>{t.teachTitle}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-              {words.map((w) => (
-                <button key={w.word} className="seg"
-                  onClick={() => !w.inLibrary && void teach(w.word)}
-                  title={t.wordTitle(w.word, w.n, w.sessions, w.proper, w.inLibrary)}
-                  style={{
-                    ...mono, fontSize: 11 + Math.round((w.n / maxN) * 3),
-                    padding: '3px 7px', borderRadius: 6, cursor: w.inLibrary ? 'default' : 'pointer',
-                    border: `1px solid ${w.inLibrary ? 'var(--accent-dim)' : 'var(--border)'}`,
-                    background: w.inLibrary ? 'var(--accent-dim)' : 'var(--surface)',
-                    color: w.inLibrary ? 'var(--accent)' : 'var(--muted)',
-                    opacity: 0.55 + (w.n / maxN) * 0.45,
-                  }}>
-                  {w.word}
-                </button>
-              ))}
-            </div>
-            <p style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.55, marginTop: 10 }}>
-              {t.teachHint}
-            </p>
+        {temLateral && words && (
+          <aside style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+            {/* Quatro leituras das mesmas sessões, empilhadas no MESMO cartão.
+                A primeira é tarefa (o que ensinar), as outras três são leitura
+                sobre você — por isso ela abre e elas ficam fechadas. */}
+            <SidePanel id="teach" title={t.teachTitle} hint={t.teachHint} n={words.teach.length} t={t} defaultOpen>
+              <Chips>
+                {words.teach.map((w) => (
+                  <Chip key={w.word} label={w.word} weight={w.n / Math.max(1, words.teach[0]?.n || 1)}
+                    active={w.inLibrary} onClick={w.inLibrary ? undefined : () => void teach(w.word)}
+                    title={t.wordTitle(w.word, w.n, w.sessions, w.proper, w.inLibrary)} />
+                ))}
+              </Chips>
+            </SidePanel>
+
+            <SidePanel id="top" title={t.topTitle} hint={t.topHint} n={words.top.length} t={t}>
+              <Chips>
+                {words.top.map((w: WordStat) => (
+                  <Chip key={w.word} label={w.word} weight={w.n / Math.max(1, words.top[0]?.n || 1)}
+                    count={w.n} title={t.statTitle(w.word, w.n, w.sessions)} />
+                ))}
+              </Chips>
+            </SidePanel>
+
+            <SidePanel id="rare" title={t.rareTitle} hint={t.rareHint} n={words.rare.length} t={t}>
+              <Chips>
+                {words.rare.map((w: WordStat) => (
+                  <Chip key={w.word} label={w.word} weight={w.n / Math.max(1, words.rare[0]?.n || 1)}
+                    count={w.n} title={t.statTitle(w.word, w.n, w.sessions)} />
+                ))}
+              </Chips>
+            </SidePanel>
+
+            <SidePanel id="tics" title={t.ticsTitle} hint={t.ticsHint} n={words.tics.length} t={t}>
+              <Chips>
+                {words.tics.map((w: TicStat) => (
+                  <Chip key={w.word} label={w.word} weight={w.n / Math.max(1, words.tics[0]?.n || 1)}
+                    count={w.perMin >= 0.1 ? `${w.perMin.toFixed(1)}/min` : w.n} warn
+                    title={t.ticTitle(w.word, w.n, w.perMin.toFixed(1))} />
+                ))}
+              </Chips>
+            </SidePanel>
           </aside>
         )}
       </div>
@@ -540,10 +607,11 @@ export function Recorder({ api, t, extraShortcuts }: RecorderProps): JSX.Element
       )}
 
       {player && (
-        <Player id={player} sessions={sessions} api={api} t={t}
+        <Player id={player} sessions={sessions} api={api} t={t} canSweep={canSweep}
           onClose={() => setPlayer(null)}
           onGo={(id) => setPlayer(id)}
           onRetry={(id) => void retry(id)}
+          onReload={() => void load(query)}
           retrying={retrying} />
       )}
     </div>
@@ -604,7 +672,10 @@ function Row({ s, t, api, last, open, detail, copied, retrying, onRetry, onOpen,
   detail: Session | null; copied: boolean; retrying: boolean; onRetry: () => void;
   onOpen: () => void; onCopy: (text: string) => void; onRemove: () => void;
 }): JSX.Element {
-  const text = detail?.text || s.preview || '';
+  // Copia o texto ARRUMADO, não a fala picada: quem clica em copiar vai colar
+  // num e-mail, num brief ou num chat, e é lá que a transcrição crua aparece
+  // como bloco ilegível. A fala com tempo continua na tela, pra pular no áudio.
+  const text = detail ? tidyToText(detail.segments, detail.text) : s.preview || '';
   return (
     <div style={{ borderBottom: last && !open ? 'none' : '1px solid var(--border-soft)' }}>
       <div className="row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 13px' }}>
@@ -687,6 +758,83 @@ function Row({ s, t, api, last, open, detail, copied, retrying, onRetry, onOpen,
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * O cartão da lateral, um só pros quatro painéis.
+ *
+ * Antes havia UM bloco desenhado à mão ("pra ensinar ao whisper") e cada painel
+ * novo seria outro bloco desenhado à mão: quatro títulos com espaçamento
+ * levemente diferente é como uma lateral vira colcha de retalho. Aqui o título,
+ * o contador, o estado aberto e a dica moram num lugar só.
+ *
+ * Fica lembrado por painel: quem abriu "vícios de linguagem" quer ele aberto na
+ * próxima gravação, e quem fechou não quer ser lembrado de novo.
+ */
+function SidePanel({ id, title, hint, n, t, defaultOpen, children }: {
+  id: string; title: string; hint: string; n: number; t: Strings;
+  defaultOpen?: boolean; children: React.ReactNode;
+}): JSX.Element {
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(`rec:panel:${id}`);
+      return v === null ? !!defaultOpen : v === 'open';
+    } catch { return !!defaultOpen; }
+  });
+
+  const toggle = (): void => {
+    setOpen((v) => {
+      try { localStorage.setItem(`rec:panel:${id}`, v ? 'closed' : 'open'); } catch { /* modo anônimo */ }
+      return !v;
+    });
+  };
+
+  return (
+    <div style={{ ...panel, overflow: 'hidden' }}>
+      <button onClick={toggle} aria-expanded={open}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        <span style={{ ...label }}>{title}</span>
+        <span style={{ ...num, marginLeft: 'auto', fontSize: 10.5, color: 'var(--faint)' }}>{n}</span>
+        <ChevronDown size={13} color="var(--faint)"
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }} />
+      </button>
+      {open && (
+        <div className="panel-in" style={{ padding: '0 11px 11px' }}>
+          {n > 0 ? children : <p style={{ fontSize: 11.5, color: 'var(--faint)' }}>{t.panelEmpty}</p>}
+          <p style={{ fontSize: 11, color: 'var(--faint)', lineHeight: 1.55, marginTop: 9 }}>{hint}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Chips = ({ children }: { children: React.ReactNode }): JSX.Element => (
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>{children}</div>
+);
+
+/**
+ * A pastilha de palavra. O TAMANHO diz a frequência — é o que faz a lista ser
+ * lida de relance em vez de linha por linha. Sem `onClick` ela não finge ser
+ * botão: cursor normal, e o clique não faz nada.
+ */
+function Chip({ label: text, weight, count, active, warn, title, onClick }: {
+  label: string; weight: number; count?: number | string; active?: boolean; warn?: boolean;
+  title: string; onClick?: () => void;
+}): JSX.Element {
+  const cor = active ? 'var(--accent)' : warn ? 'var(--yellow)' : 'var(--muted)';
+  return (
+    <button className="seg" onClick={onClick} title={title} disabled={!onClick}
+      style={{
+        ...mono, fontSize: 11 + Math.round(weight * 3), display: 'inline-flex', alignItems: 'baseline', gap: 5,
+        padding: '3px 7px', borderRadius: 6, cursor: onClick ? 'pointer' : 'default',
+        border: `1px solid ${active ? 'var(--accent-dim)' : 'var(--border)'}`,
+        background: active ? 'var(--accent-dim)' : 'var(--surface)',
+        color: cor, opacity: 0.55 + weight * 0.45,
+      }}>
+      {text}
+      {count !== undefined && <span style={{ ...num, fontSize: 9.5, opacity: 0.7 }}>{count}</span>}
+    </button>
   );
 }
 
@@ -1089,38 +1237,172 @@ function LiveCard({ t, state }: { t: Strings; state: RecorderState | null }): JS
  *
  * ←/→ andam entre as gravações sem fechar. Esc fecha.
  */
-function Player({ id, sessions, api, t, onClose, onGo, onRetry, retrying }: {
-  id: string; sessions: SessionSummary[]; api: RecorderApi; t: Strings;
-  onClose: () => void; onGo: (id: string) => void; onRetry: (id: string) => void; retrying: string | null;
+function Player({ id, sessions, api, t, canSweep, onClose, onGo, onRetry, onReload, retrying }: {
+  id: string; sessions: SessionSummary[]; api: RecorderApi; t: Strings; canSweep: boolean;
+  onClose: () => void; onGo: (id: string) => void; onRetry: (id: string) => void;
+  onReload: () => void; retrying: string | null;
 }): JSX.Element | null {
+  // Ler ou editar. Nasce em ler SEMPRE, inclusive ao trocar de gravação: abrir
+  // uma gravação pra ler e cair numa tela de corte seria o diálogo decidindo
+  // por você o que você veio fazer.
+  const [editando, setEditando] = useState(false);
   const [detail, setDetail] = useState<Session | null>(null);
+  // Texto limpo por padrão: o que a pessoa abre a gravação pra fazer é LER e
+  // COLAR em outro lugar, e transcrição crua não serve pra nenhum dos dois. Os
+  // trechos com tempo continuam a um clique porque são eles que pulam no áudio.
+  const [mode, setMode] = useState<'clean' | 'stamps'>(() => {
+    try { return localStorage.getItem('rec:transcript') === 'stamps' ? 'stamps' : 'clean'; } catch { return 'clean'; }
+  });
+  const [copied, setCopied] = useState(false);
+  // O que está no editor agora. Sai do `edited` gravado quando existe, e do
+  // texto limpo automático quando não: uma retranscrição melhora o texto de
+  // quem nunca editou e não apaga o de quem editou.
+  const [html, setHtml] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [sweep, setSweep] = useState<Sweep | null>(null);
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepErr, setSweepErr] = useState<string | null>(null);
+  const editorRef = useRef<TiptapEditor | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const media = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const box = useRef<HTMLDivElement>(null);
+
+  const paragraphs = useMemo(() => tidyTranscript(detail?.segments, detail?.text || ''), [detail]);
+  const limpo = useMemo(() => paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join('') || '<p></p>', [paragraphs]);
+  const editavel = typeof api.saveTranscript === 'function';
+
+  // `html` é só o que VOCÊ digitou nesta sessão de tela. Enquanto for null, o
+  // que aparece é o gravado (ou o limpo automático). Guardar isso num estado
+  // que começa vazio fazia o editor montar sem conteúdo, e o primeiro evento do
+  // ProseMirror gravava esse vazio por cima do texto — perda silenciosa.
+  const conteudo = html ?? detail?.edited ?? limpo;
+
+  // Guarda 800 ms depois da última tecla. Guardar a cada tecla é uma escrita em
+  // disco por letra; guardar só no fechar perde tudo quando o app cai.
+  const change = (next: string): void => {
+    if (next === conteudo) return;
+    // Documento vazio só se você APAGOU tudo mesmo. Vindo do editor recém-montado
+    // é o vazio de antes do conteúdo entrar, e gravar isso apaga a transcrição.
+    if (VAZIO.test(next) && !VAZIO.test(conteudo)) return;
+    setHtml(next);
+    if (!api.saveTranscript) return;
+    setSaving(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      void api.saveTranscript?.(id, next === limpo ? '' : next).finally(() => setSaving(false));
+    }, 800);
+  };
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  // Varre o que está NA TELA (com as suas edições), não a fala crua do banco:
+  // varrer uma coisa e mostrar outra é o pior dos dois mundos.
+  const varrer = async (): Promise<void> => {
+    if (!api.sweep) return;
+    const texto = editorRef.current?.getText({ blockSeparator: '\n\n' }) || paragraphs.join('\n\n');
+    if (!texto.trim()) return;
+    setSweeping(true);
+    setSweepErr(null);
+    try {
+      setSweep(await api.sweep(id, texto));
+    } catch (e) {
+      setSweepErr(String((e as Error).message || e));
+    } finally {
+      setSweeping(false);
+    }
+  };
+
+  const marcar = (taskId: string): void => {
+    setSweep((atual) => {
+      if (!atual) return atual;
+      const next = { ...atual, tasks: atual.tasks.map((x) => (x.id === taskId ? { ...x, done: !x.done } : x)) };
+      void api.saveSweep?.(id, next);
+      return next;
+    });
+  };
+
+  const limparSweep = (): void => {
+    setSweep(null);
+    setSweepErr(null);
+    void api.saveSweep?.(id, null);
+  };
+
+  const restore = (): void => {
+    if (!window.confirm(t.restoreConfirm)) return;
+    setHtml(limpo);
+    setDetail((d) => (d ? { ...d, edited: null } : d));
+    void api.saveTranscript?.(id, '');
+  };
+
+  const pick = (v: 'clean' | 'stamps'): void => {
+    setMode(v);
+    try { localStorage.setItem('rec:transcript', v); } catch { /* modo anônimo */ }
+  };
+
+  // Copia o que está NA TELA: copiar uma coisa e mostrar outra é a forma mais
+  // rápida de a pessoa colar em cima do cliente um bloco que ela não leu.
+  const copy = (): void => {
+    const e = editorRef.current;
+    const text = mode === 'clean'
+      ? (e ? e.getText({ blockSeparator: '\n\n' }) : paragraphs.join('\n\n'))
+      : (detail?.segments?.length
+        ? detail.segments.map((seg) => `${mmss(seg.start * 1000)}  ${seg.text.trim()}`).join('\n')
+        : detail?.text || '');
+    if (!text.trim()) return;
+
+    // Duas versões na área de transferência: quem cola no Gmail ou no Notion
+    // recebe o negrito e a lista, quem cola no terminal recebe texto puro. Onde
+    // o navegador não souber fazer isso, texto puro é o que sempre funciona.
+    const rico = mode === 'clean' && e ? e.getHTML() : '';
+    if (rico && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      void navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([rico], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      })]).catch(() => navigator.clipboard.writeText(text));
+    } else {
+      void navigator.clipboard.writeText(text);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
 
   const i = sessions.findIndex((x) => x.id === id);
   const s = sessions[i];
 
   useEffect(() => {
     setDetail(null);
-    void api.getSession(id).then(setDetail);
+    setEditando(false);
+    setCopied(false);
+    setSweepErr(null);
+    setSweep(null);
+    setHtml(null);
+    void api.getSession(id).then((s) => { setDetail(s); setSweep(s?.sweep || null); });
   }, [id, api]);
 
   useEffect(() => { box.current?.focus(); }, [id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      // Esc volta UMA camada. Editando, a camada é o modo — fechar o diálogo
+      // inteiro jogaria fora o trecho marcado por um atalho que a pessoa
+      // apertou pra "sair disto aqui", não pra "sair de tudo".
+      if (e.key === 'Escape') { e.preventDefault(); if (editando) setEditando(false); else onClose(); return; }
       // Seta só navega quando o foco NÃO está no player: dentro do <video> ela
       // é o atalho nativo de avançar 5 segundos, e sequestrar isso seria trocar
       // um controle que todo mundo conhece por um que ninguém pediu.
       const tag = document.activeElement?.tagName;
       if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'INPUT') return;
+      // E no modo edição ela não navega de jeito nenhum: pular de gravação com
+      // um trecho marcado apaga o trabalho em silêncio. Medido na tela aberta —
+      // um ArrowRight levava de 0:27 pra outra gravação E saía do modo, sem
+      // aviso nenhum. Atalho que destrói trabalho não é atalho, é armadilha.
+      if (editando) return;
       if (e.key === 'ArrowRight' && sessions[i + 1]) { e.preventDefault(); onGo(sessions[i + 1].id); }
       if (e.key === 'ArrowLeft' && sessions[i - 1]) { e.preventDefault(); onGo(sessions[i - 1].id); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [i, sessions, onClose, onGo]);
+  }, [i, sessions, onClose, onGo, editando]);
 
   if (!s) return null;
   const src = api.mediaUrl(s.id, s.hasVideo ? 'mp4' : 'mp3');
@@ -1148,6 +1430,24 @@ function Player({ id, sessions, api, t, onClose, onGo, onRetry, retrying }: {
               disabled={!sessions[i - 1]} title={t.prev} aria-label={t.prev}><ChevronLeft size={15} /></button>
             <button className="icon-btn" onClick={() => sessions[i + 1] && onGo(sessions[i + 1].id)}
               disabled={!sessions[i + 1]} title={t.next} aria-label={t.next}><ChevronRight size={15} /></button>
+            {api.exportClip && s.status !== 'failed' && (
+              <button className="icon-btn" onClick={() => setEditando((v) => !v)}
+                title={editando ? t.editLeave : t.edit} aria-label={editando ? t.editLeave : t.edit}
+                aria-pressed={editando}>
+                <Scissors size={15} color={editando ? 'var(--accent)' : undefined} />
+              </button>
+            )}
+            {canSweep && api.sweep && (
+              <button className="icon-btn" onClick={() => void varrer()}
+                disabled={!detail || sweeping || s.status === 'failed'}
+                title={t.sweep} aria-label={t.sweep}>
+                <ListChecks size={15} color={sweep ? 'var(--accent)' : undefined} />
+              </button>
+            )}
+            <button className="icon-btn" onClick={copy} disabled={!detail || s.status === 'failed'}
+              title={copied ? t.copied : t.copy} aria-label={copied ? t.copied : t.copy}>
+              {copied ? <Check size={15} color="var(--accent)" /> : <Copy size={15} />}
+            </button>
             <a className="icon-btn" href={src} download={`${s.id}.${s.hasVideo ? 'mp4' : 'mp3'}`}
               title={s.hasVideo ? t.downloadMp4 : t.downloadMp3} aria-label={s.hasVideo ? t.downloadMp4 : t.downloadMp3}>
               {s.hasVideo ? <FileVideo size={14} /> : <FileAudio size={14} />}
@@ -1157,6 +1457,14 @@ function Player({ id, sessions, api, t, onClose, onGo, onRetry, retrying }: {
         </div>
 
         <div style={{ overflowY: 'auto', padding: 14 }}>
+          {editando ? (
+            <CercaDoEditor aviso={t.editFail} onSair={() => setEditando(false)}>
+              <Suspense fallback={<div style={{ fontSize: 12, color: 'var(--faint)', padding: '14px 0' }}>{t.opening}</div>}>
+                <QuickEdit key={id} id={s.id} src={src} hasVideo={!!s.hasVideo} durMs={s.durMs} api={api} t={t}
+                  onSaved={(novo) => { setEditando(false); onReload(); onGo(novo); }} />
+              </Suspense>
+            </CercaDoEditor>
+          ) : (<>
           {s.hasVideo ? (
             <video ref={media} controls autoPlay src={src}
               style={{ width: '100%', maxHeight: '52vh', borderRadius: 8, background: '#000', display: 'block' }} />
@@ -1176,19 +1484,76 @@ function Player({ id, sessions, api, t, onClose, onGo, onRetry, retrying }: {
           ) : !detail ? (
             <div style={{ fontSize: 12, color: 'var(--faint)', padding: '14px 0 4px' }}>{t.opening}</div>
           ) : (
-            <div style={{ display: 'grid', gap: 5, marginTop: 14, fontSize: 13, lineHeight: 1.65, color: 'var(--text)' }}>
-              {detail.segments?.length ? detail.segments.map((seg, k) => (
-                <p key={k} style={{ display: 'flex', gap: 9 }}>
-                  <button className="ts" style={{ ...num, fontSize: 10.5, paddingTop: 3, flexShrink: 0 }}
-                    onClick={() => { if (media.current) { media.current.currentTime = seg.start; void media.current.play(); } }}
-                    title={t.jumpTo}>
-                    {mmss(seg.start * 1000)}
-                  </button>
-                  <span>{seg.text}</span>
-                </p>
-              )) : <p>{detail.text || <em style={{ color: 'var(--faint)' }}>{t.silence}</em>}</p>}
-            </div>
+            <>
+              {sweeping && !sweep && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14, fontSize: 12.5, color: 'var(--faint)' }}>
+                  <Wave mode="sweep" color="var(--accent)" bars={4} />
+                  {t.sweeping}
+                </div>
+              )}
+              {sweepErr && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14, padding: '10px 12px', borderRadius: 8, background: 'var(--red-dim)' }}>
+                  <AlertTriangle size={15} color="var(--red)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.5 }}>{t.sweepFail(sweepErr)}</span>
+                </div>
+              )}
+              {sweep && (
+                <SweepPanel sweep={sweep} t={t} busy={sweeping}
+                  onToggle={marcar} onAgain={() => void varrer()} onClear={limparSweep} />
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+                <span style={{ ...label }}>{mode === 'clean' ? t.transcriptClean : t.transcriptStamps}</span>
+                {mode === 'clean' && saving && <span style={{ fontSize: 10.5, color: 'var(--faint)' }}>{t.saving}</span>}
+                {mode === 'clean' && !saving && detail.edited && (
+                  <>
+                    <span style={{ fontSize: 10.5, color: 'var(--accent)' }}>{t.edited}</span>
+                    <button className="icon-btn" onClick={restore} title={t.restoreClean} aria-label={t.restoreClean}>
+                      <RotateCcw size={13} />
+                    </button>
+                  </>
+                )}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 2, padding: 3, borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)' }}>
+                  {(['clean', 'stamps'] as const).map((v) => (
+                    <button key={v} className="seg" aria-pressed={mode === v} onClick={() => pick(v)}
+                      title={v === 'clean' ? t.transcriptClean : t.transcriptStamps}
+                      aria-label={v === 'clean' ? t.transcriptClean : t.transcriptStamps}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 26,
+                        borderRadius: 7, border: 'none', cursor: 'pointer',
+                        background: mode === v ? 'var(--surface-3)' : 'transparent',
+                        color: mode === v ? 'var(--text)' : 'var(--faint)',
+                      }}>
+                      {v === 'clean' ? <AlignLeft size={13} /> : <Clock size={13} />}
+                    </button>
+                  ))}
+                </span>
+              </div>
+
+              {mode === 'clean' ? (
+                paragraphs.length || detail.edited ? (
+                  <TranscriptEditor key={id} html={conteudo} editable={editavel} t={t}
+                    onChange={change} onReady={(e) => { editorRef.current = e; }} />
+                ) : (
+                  <p style={{ marginTop: 10 }}><em style={{ color: 'var(--faint)' }}>{t.silence}</em></p>
+                )
+              ) : (
+                <div style={{ display: 'grid', gap: 5, marginTop: 10, fontSize: 13, lineHeight: 1.65, color: 'var(--text)' }}>
+                  {detail.segments?.length ? detail.segments.map((seg, k) => (
+                    <p key={k} style={{ display: 'flex', gap: 9 }}>
+                      <button className="ts" style={{ ...num, fontSize: 10.5, paddingTop: 3, flexShrink: 0 }}
+                        onClick={() => { if (media.current) { media.current.currentTime = seg.start; void media.current.play(); } }}
+                        title={t.jumpTo}>
+                        {mmss(seg.start * 1000)}
+                      </button>
+                      <span>{seg.text}</span>
+                    </p>
+                  )) : <p>{detail.text || <em style={{ color: 'var(--faint)' }}>{t.silence}</em>}</p>}
+                </div>
+              )}
+            </>
           )}
+          </>)}
         </div>
       </div>
     </div>

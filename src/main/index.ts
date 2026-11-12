@@ -14,7 +14,7 @@ import { createWriteStream, existsSync, rmSync, statSync, type WriteStream } fro
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Kind, RecorderState, StartOptions } from '../shared/types.js';
-import { hasFfmpeg, toFlac, toMp3, toMp4, toPoster, wordCandidates } from '@stalkier/core';
+import { hasFfmpeg, toFlac, toMp3, toMp4, toPoster, wordPanels } from '@stalkier/core';
 import { pasteText } from './paste.js';
 import { apiKeyHint, getSettings, hasEncryption, setApiKey, setSettings } from './settings.js';
 import {
@@ -314,6 +314,7 @@ async function finish(durMs: number): Promise<void> {
       saveSession({
         id: job.id,
         createdAt: Date.now(),
+        edited: null,
         kind,
         durMs,
         hasVideo,
@@ -581,6 +582,14 @@ function registerIpc(): void {
     'sessions:get': (_e, id: string) => getSession(id),
     'sessions:remove': (_e, id: string) => removeSession(id),
     'sessions:retranscribe': (_e, id: string) => retranscribe(id),
+    // HTML vindo do renderer: o store trunca, e quem renderiza é o ProseMirror,
+    // que descarta o que não está no schema dele. Em lugar nenhum isso vira
+    // innerHTML.
+    'sessions:edit': (_e, id: string, html: string) => {
+      if (!isValidId(id)) return { ok: false };
+      updateSession(id, { edited: typeof html === 'string' && html.trim() ? html : null });
+      return { ok: true };
+    },
     'sessions:reveal': (_e, id: string) => {
       if (!isValidId(id)) return false;
       const mp3 = mediaPath(id, 'mp3');
@@ -602,7 +611,7 @@ function registerIpc(): void {
     'key:set': (_e, key: string) => setApiKey(typeof key === 'string' ? key : ''),
     'key:test': () => testKey(),
 
-    'words:list': () => wordCandidates(allSessions(), getVocabulary()),
+    'words:list': () => wordPanels(allSessions(), getVocabulary()),
     'vocabulary:get': () => getVocabulary(),
     'vocabulary:set': (_e, list: string[]) => setVocabulary(list),
   };

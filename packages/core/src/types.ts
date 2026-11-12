@@ -7,6 +7,27 @@
 export type Kind = 'audio' | 'screen' | 'dictation';
 export type Engine = 'groq' | 'local';
 
+/** Um item do checklist. `who` só quando a fala nomeia alguém. */
+export interface SweepTask {
+  id: string;
+  text: string;
+  who: string | null;
+  done: boolean;
+}
+
+/**
+ * O que sobra de uma conversa quando se tira a conversa: o que foi decidido, o
+ * que alguém tem que fazer e o que ficou sem resposta. Nada de resumo.
+ */
+export interface Sweep {
+  decisions: string[];
+  tasks: SweepTask[];
+  open: string[];
+  /** Qual modelo respondeu. A tela mostra porque o resultado depende disso. */
+  engine: string;
+  at: number;
+}
+
 export interface Segment {
   start: number;
   end: number;
@@ -37,10 +58,18 @@ export interface Session {
   costUsd: number;
   text: string;
   segments: Segment[];
+  /**
+   * A sua versão do texto, em HTML, quando você editou. `null` enquanto
+   * ninguém tocou: é o que faz o texto limpo continuar acompanhando uma
+   * retranscrição, e o que faz a edição sobreviver a ela.
+   */
+  edited: string | null;
+  /** O resultado do "varrer", quando já foi pedido. Opcional: nem todo app tem chave de LLM. */
+  sweep?: Sweep | null;
 }
 
-/** O que a lista mostra. Sem `segments` e sem o texto inteiro. */
-export type SessionSummary = Omit<Session, 'text' | 'segments'> & { preview: string };
+/** O que a lista mostra. Sem `segments`, sem o texto inteiro e sem o HTML editado. */
+export type SessionSummary = Omit<Session, 'text' | 'segments' | 'edited'> & { preview: string };
 
 export interface Settings {
   engine: Engine;
@@ -81,6 +110,37 @@ export interface WordCandidate {
   sessions: number;
   proper: boolean;
   inLibrary: boolean;
+}
+
+/** Contagem simples: quantas vezes, em quantas sessões. */
+export interface WordStat {
+  word: string;
+  n: number;
+  sessions: number;
+}
+
+/** Muleta de fala medida por minuto FALADO, que é o que dá pra comparar entre gravações. */
+export interface TicStat {
+  word: string;
+  n: number;
+  perMin: number;
+}
+
+/**
+ * Os quatro cartões da lateral numa chamada só. São quatro leituras do MESMO
+ * varrimento das sessões: fazer quatro consultas seria varrer quatro vezes.
+ */
+export interface WordPanels {
+  /** O que vale ensinar ao modelo. Ordenado por score, não por frequência. */
+  teach: WordCandidate[];
+  /** As mais ditas de verdade, sem artigo nem preposição. */
+  top: WordStat[];
+  /** Rara e sua: pouca sessão, muita repetição dentro dela. */
+  rare: WordStat[];
+  /** Muleta de fala, com a taxa por minuto. */
+  tics: TicStat[];
+  /** Minutos de fala no período, que é o denominador da taxa. */
+  minutes: number;
 }
 
 export interface StartOptions {

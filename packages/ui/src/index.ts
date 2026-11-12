@@ -13,3 +13,5 @@
 export { Recorder, type RecorderProps, type ExtraShortcut } from './Recorder.js';
 export type { MonthUsage, RecorderApi, SettingsSnapshot } from './api.js';
 export { en, pt, type Strings } from './strings.js';
+export { tidyToText, tidyTranscript } from './tidy.js';
+export { TranscriptEditor } from './Transcript.js';

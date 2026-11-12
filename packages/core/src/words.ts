@@ -1,5 +1,5 @@
 import { eng, por } from 'stopword';
-import type { Session, WordCandidate } from './types.js';
+import type { Session, TicStat, WordCandidate, WordPanels, WordStat } from './types.js';
 
 /**
  * "O que vale ensinar ao modelo" — não "as palavras mais ditas".
@@ -107,4 +107,82 @@ export function wordCandidates(
     .sort((a, b) => b.score - a.score || b.n - a.n)
     .slice(0, limit)
     .map(({ score: _score, ...rest }) => rest);
+}
+
+
+/**
+ * A lista de muletas que o painel MEDE. É a mesma família que o `tidy` remove do
+ * texto, e é de propósito: o que some da leitura tem que aparecer em algum lugar,
+ * senão você nunca fica sabendo que fala assim.
+ */
+const TICS = ['né', 'tipo', 'assim', 'tá', 'sabe', 'entendeu', 'enfim', 'cara', 'então', 'aí', 'daí', 'certo', 'ok', 'like', 'you know', 'right'];
+const RE_TICS = TICS.map((tic): [string, RegExp] => [tic, new RegExp(String.raw`(?<![\p{L}])${tic}(?![\p{L}])`, 'giu')]);
+const HESITACOES = /(?<![\p{L}])(é{2,}|e{2,}h+|a{2,}h+|h+u+m+|u+h+u+m+|ã{2,}|hã|ahn|ahm|hmm+|uh+|erm+)(?![\p{L}])/giu;
+
+/**
+ * Os quatro cartões da lateral, de um varrimento só.
+ *
+ * `top` é curiosidade honesta: quais palavras são suas de fato. `rare` é a
+ * pergunta boa disfarçada de curiosidade — palavra que aparece muito DENTRO de
+ * poucas sessões é jargão de projeto, não vocabulário geral. `tics` é o único
+ * que mede você e não o modelo.
+ */
+export function wordPanels(
+  sessions: Session[],
+  vocabulary: string[] = [],
+  days = 30,
+  limit = 24,
+): WordPanels {
+  const since = Date.now() - days * 86_400_000;
+  const recentes = sessions.filter((s) => s.createdAt >= since && (s.text || '').trim());
+
+  const totais = new Map<string, { n: number; sessoes: Set<string> }>();
+  const tics = new Map<string, number>();
+  let ms = 0;
+
+  for (const s of recentes) {
+    ms += s.durMs || 0;
+    const texto = s.text || '';
+    // A MESMA contagem do "pra ensinar": artigo, preposição e muleta fora. Uma
+    // lista de "mais ditas" encabeçada por "aqui, vai, tem, gente" é verdadeira
+    // e não informa nada — o que se procura ali é vocabulário seu.
+    for (const [w, v] of countWords(texto)) {
+      const at = totais.get(w) ?? { n: 0, sessoes: new Set<string>() };
+      at.n += v.n;
+      at.sessoes.add(s.id);
+      totais.set(w, at);
+    }
+    for (const [tic, re] of RE_TICS) {
+      const n = (texto.match(re) || []).length;
+      if (n) tics.set(tic, (tics.get(tic) || 0) + n);
+    }
+    const h = (texto.match(HESITACOES) || []).length;
+    if (h) tics.set('éé', (tics.get('éé') || 0) + h);
+  }
+
+  const minutes = ms / 60_000;
+  const entradas = [...totais.entries()].map(([word, v]): WordStat => ({ word, n: v.n, sessions: v.sessoes.size }));
+
+  const top = [...entradas].sort((a, b) => b.n - a.n || a.word.localeCompare(b.word)).slice(0, limit);
+
+  // Densidade, não contagem: a palavra tem que ser repetida DENTRO de poucas
+  // sessões. Sem o piso de 3 ocorrências, qualquer erro de transcrição que
+  // aparece uma vez só entraria como "jargão seu".
+  const rare = entradas
+    .filter((w) => w.n >= 3 && w.sessions <= 2 && w.word.length >= 5)
+    .sort((a, b) => b.n / b.sessions - a.n / a.sessions || b.n - a.n)
+    .slice(0, limit);
+
+  const ticStats = [...tics.entries()]
+    .map(([word, n]): TicStat => ({ word, n, perMin: minutes > 0 ? n / minutes : 0 }))
+    .sort((a, b) => b.n - a.n)
+    .slice(0, limit);
+
+  return {
+    teach: wordCandidates(sessions, vocabulary, days, limit * 2),
+    top,
+    rare,
+    tics: ticStats,
+    minutes,
+  };
 }

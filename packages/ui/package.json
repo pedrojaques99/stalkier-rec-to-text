@@ -27,13 +27,22 @@
   },
   "peerDependencies": {
     "lucide-react": ">=0.400.0",
-    "react": ">=18"
+    "react": ">=18",
+    "react-dom": ">=18"
   },
   "dependencies": {
-    "@stalkier/core": "*"
+    "@stalkier/core": "*",
+    "@tiptap/pm": "^3.30.2",
+    "@tiptap/react": "^3.30.2",
+    "@tiptap/starter-kit": "^3.30.2",
+    "react-image-crop": "^11.1.2",
+    "wavesurfer.js": "^7.12.12"
   },
   "devDependencies": {
     "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.7.2"
   },
   "_build_comment": "Sem `prepare`: durante o npm ci ele roda antes do dist do core existir, e o build do ui morre. Quem constrói na ordem certa é o script do repo raiz (npm run build --workspaces), que respeita a dependência entre os pacotes."

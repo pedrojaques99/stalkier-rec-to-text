@@ -33,6 +33,8 @@ const api: RecorderApi = {
   setKey: (key) => window.api.key.set(key),
   testKey: () => window.api.key.test(),
 
+  saveTranscript: (id, html) => window.api.sessions.edit(id, html),
+
   words: () => window.api.words.list(),
   getVocabulary: () => window.api.vocabulary.get(),
   setVocabulary: (list) => window.api.vocabulary.set(list),

@@ -56,3 +56,99 @@
   0%, 100% { transform: scaleY(0.22); opacity: 0.3; }
   45% { transform: scaleY(1); opacity: 1; }
 }
+
+/* ─── Transcrição editável (ProseMirror) ─────────────────────────────────────
+   A caixa NÃO tem moldura nem fundo próprio: o que se faz aqui nove vezes em
+   dez é ler, e uma caixa de formulário em volta de um texto de leitura diz
+   "preencha", não "leia". A borda só aparece quando o cursor está dentro. */
+.transcript {
+  outline: none;
+  max-width: 68ch;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text);
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  margin-left: -12px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.transcript:focus-within,
+.transcript.ProseMirror-focused { border-left-color: var(--accent-dim); }
+.transcript p { margin: 0 0 12px; }
+.transcript p:last-child { margin-bottom: 0; }
+.transcript ul, .transcript ol { margin: 0 0 12px; padding-left: 20px; }
+.transcript li { margin: 0 0 4px; }
+.transcript li p { margin: 0; }
+.transcript h1, .transcript h2, .transcript h3 {
+  font-size: 14.5px; font-weight: 600; margin: 16px 0 8px; color: var(--text);
+}
+.transcript strong { font-weight: 650; color: var(--text); }
+.transcript s { color: var(--faint); }
+.transcript code {
+  font-family: var(--mono); font-size: 12px; padding: 1px 4px;
+  border-radius: 4px; background: var(--surface-2);
+}
+.transcript blockquote {
+  margin: 0 0 12px; padding-left: 11px; border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+
+/* ─── A régua de aparar (wavesurfer + regions) ───────────────────────────────
+   O wavesurfer desenha dentro de um shadow root, então o único jeito de
+   alcançar a região daqui é por `::part`. Vale a pena alcançar: a borda que o
+   plugin entrega de fábrica tem 1px e nenhuma cor, e uma borda que não se vê
+   obriga a tela a escrever "arraste as bordas" embaixo. Punho visível é a
+   mesma instrução dita pelo controle, e aí a legenda pode sair.
+
+   8px de largura porque é o mínimo que a mão acha sem mirar; o traço claro por
+   dentro é o que diz "isto se pega". */
+.onda ::part(region) {
+  border-left: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+}
+.onda ::part(region-handle) {
+  width: 8px;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border: none;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+/* O traço central do punho: dois pixels claros, como o grip de uma janela. */
+.onda ::part(region-handle-left) { border-left: 2px solid var(--accent); }
+.onda ::part(region-handle-right) { border-right: 2px solid var(--accent); }
+.onda ::part(region-handle):hover {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .onda ::part(region-handle) { transition-duration: 0.01ms; }
+}
+
+/* ─── A moldura de recorte (react-image-crop) ────────────────────────────────
+   A lib expõe o tema como variáveis próprias, então vesti-la é redefinir seis
+   valores — não brigar com seletor dela. O que muda:
+
+   - punho e borda na cor de destaque, no lugar do branco de fábrica;
+   - foco na MESMA cor, no lugar do `#08f` azul que ela traz — anel de foco de
+     outra paleta é o tipo de detalhe que denuncia lib colada por cima;
+   - as formigas marchando saem. É animação infinita em cima do quadro que a
+     pessoa está olhando pra decidir enquadramento, e decidir com o contorno se
+     mexendo cansa. Borda quieta diz a mesma coisa.
+
+   Com proporção travada a própria lib esconde as bordas e deixa só os quatro
+   cantos (um lado puxado sozinho não preserva razão); no livre vêm os oito. */
+.recorte .ReactCrop {
+  --rc-drag-handle-size: 12px;
+  --rc-drag-handle-mobile-size: 24px;
+  --rc-drag-handle-bg-colour: var(--accent);
+  --rc-border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  --rc-focus-color: var(--accent);
+  --rc-drag-bar-size: 8px;
+}
+/* Três classes de especificidade porque a regra das formigas na lib tem duas e
+   a ordem de carga entre o CSS dela e este aqui não é garantida. */
+.recorte .ReactCrop .ReactCrop__crop-selection {
+  animation: none;
+  background-image: none;
+  outline: 1px solid var(--accent);
+}
+.recorte .ReactCrop .ReactCrop__drag-handle { border-radius: 2px; }
+.recorte .ReactCrop__crop-mask { background: rgba(0, 0, 0, 0.55); }

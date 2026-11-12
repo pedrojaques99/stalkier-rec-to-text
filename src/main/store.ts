@@ -110,6 +110,8 @@ export function getSession(id: string): Session | null {
  * num app que não inicia.
  */
 const MAX_TEXT = 200_000;
+/** O HTML editado cresce com marcação, então tem folga sobre o texto puro. */
+const MAX_EDITED = 400_000;
 const MAX_SEGMENTS = 20_000;
 const MAX_SEGMENT_TEXT = 4_000;
 
@@ -128,6 +130,7 @@ function sanitize(s: Session): Session {
     engine: s.engine === 'groq' ? 'groq' : 'local',
     costUsd: Math.max(0, Math.min(Number(s.costUsd) || 0, 1000)),
     text: String(s.text ?? '').slice(0, MAX_TEXT),
+    edited: s.edited ? String(s.edited).slice(0, MAX_EDITED) : null,
     segments: (Array.isArray(s.segments) ? s.segments : []).slice(0, MAX_SEGMENTS).map((seg) => ({
       start: Number(seg?.start) || 0,
       end: Number(seg?.end) || 0,

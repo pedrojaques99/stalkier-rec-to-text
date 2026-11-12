@@ -41,6 +41,27 @@ export interface Strings {
 
   copy: string;
   copied: string;
+  transcriptClean: string;
+  transcriptStamps: string;
+  bold: string;
+  italic: string;
+  strike: string;
+  bulletList: string;
+  orderedList: string;
+  edited: string;
+  saving: string;
+  restoreClean: string;
+  restoreConfirm: string;
+  sweep: string;
+  sweeping: string;
+  sweepDecisions: string;
+  sweepTasks: string;
+  sweepOpen: string;
+  sweepEmpty: string;
+  sweepAgain: string;
+  sweepClear: string;
+  sweepFail: (err: string) => string;
+  sweepEngine: (engine: string) => string;
   downloadMp3: string;
   downloadMp4: string;
   remove: string;
@@ -56,6 +77,15 @@ export interface Strings {
 
   teachTitle: string;
   teachHint: string;
+  topTitle: string;
+  topHint: string;
+  rareTitle: string;
+  rareHint: string;
+  ticsTitle: string;
+  ticsHint: string;
+  statTitle: (word: string, n: number, sessions: number) => string;
+  ticTitle: (word: string, n: number, perMin: string) => string;
+  panelEmpty: string;
   wordTitle: (word: string, n: number, sessions: number, proper: boolean, inLibrary: boolean) => string;
 
   keyLabel: string;
@@ -106,6 +136,25 @@ export interface Strings {
   prev: string;
   next: string;
   size: (mb: string) => string;
+  // ─── Quick edits: aparar e recortar ───
+  edit: string;
+  editLeave: string;
+  aspect: string;
+  aspectFree: string;
+  aspectOriginal: string;
+  playRange: string;
+  rangeLine: (from: string, to: string, dur: string) => string;
+  saveClip: string;
+  savingClip: string;
+  clipFail: (err: string) => string;
+  clipFrom: string;
+  waveLoading: string;
+  waveFail: string;
+  dragToTrim: string;
+  cropArea: string;
+  cropNW: string; cropN: string; cropNE: string; cropE: string;
+  cropSE: string; cropS: string; cropSW: string; cropW: string;
+  editFail: string;
 
   // ─── Resultado ───
   preparing: string;
@@ -150,6 +199,27 @@ export const en: Strings = {
 
   copy: 'Copy the transcript',
   copied: 'Copied',
+  transcriptClean: 'Clean text',
+  transcriptStamps: 'With timestamps',
+  bold: 'Bold',
+  italic: 'Italic',
+  strike: 'Strikethrough',
+  bulletList: 'Bullet list',
+  orderedList: 'Numbered list',
+  edited: 'edited by you',
+  saving: 'saving…',
+  restoreClean: 'Back to the clean transcript',
+  restoreConfirm: 'Drop your edits and go back to the clean transcript?',
+  sweep: 'Sweep: decisions, tasks and open questions',
+  sweeping: 'sweeping…',
+  sweepDecisions: 'decided',
+  sweepTasks: 'to do',
+  sweepOpen: 'still open',
+  sweepEmpty: 'nothing actionable in this one',
+  sweepAgain: 'Sweep again',
+  sweepClear: 'Drop the sweep',
+  sweepFail: (err) => `The sweep failed: ${err}`,
+  sweepEngine: (engine) => `swept by ${engine}`,
   downloadMp3: 'Download the .mp3',
   downloadMp4: 'Download the .mp4',
   remove: 'Delete this recording',
@@ -165,6 +235,15 @@ export const en: Strings = {
   yesterday: 'yesterday',
 
   teachTitle: 'teach the model',
+  topTitle: 'most said',
+  topHint: 'Straight count over the last 30 days, articles and prepositions out.',
+  rareTitle: 'rare and yours',
+  rareHint: 'Said many times inside few recordings. That is project jargon, not vocabulary.',
+  ticsTitle: 'verbal tics',
+  ticsHint: 'Per minute of speech. The only list here that measures you and not the model.',
+  statTitle: (word, n, sessions) => `${word}, ${n}× across ${sessions} sessions`,
+  ticTitle: (word, n, perMin) => `${word}, ${n}× in the period, ${perMin} per minute`,
+  panelEmpty: 'nothing here yet',
   teachHint: 'Click to add it to your library. The model gets it as context, and near-misses are corrected afterwards.',
   wordTitle: (word, n, sessions, proper, inLibrary) =>
     inLibrary
@@ -221,6 +300,31 @@ export const en: Strings = {
   prev: 'Previous',
   next: 'Next',
   size: (mb) => `${mb} MB`,
+  // ─── Quick edits ───
+  edit: 'Trim and crop',
+  editLeave: 'Back to reading',
+  aspect: 'ratio',
+  aspectFree: 'free',
+  aspectOriginal: 'original',
+  playRange: 'Play the range',
+  rangeLine: (from, to, dur) => `${from} → ${to}  (${dur})`,
+  saveClip: 'Save the clip',
+  savingClip: 'cutting…',
+  clipFail: (err) => `The cut failed: ${err}`,
+  clipFrom: 'cut',
+  waveLoading: 'reading the waveform…',
+  waveFail: 'No waveform for this one — you can still set the range by hand.',
+  dragToTrim: 'Drag the edges to pick the range',
+  // Punho não se lê: quem navega por leitor de tela precisa que cada um diga
+  // de qual lado puxa, e a moldura diga que as setas a movem.
+  cropArea: 'Crop area — arrow keys move it',
+  cropNW: 'Resize from the top left', cropN: 'Resize from the top',
+  cropNE: 'Resize from the top right', cropE: 'Resize from the right',
+  cropSE: 'Resize from the bottom right', cropS: 'Resize from the bottom',
+  cropSW: 'Resize from the bottom left', cropW: 'Resize from the left',
+  // Cerca do chunk do editor: um botão opcional que não chegou não pode
+  // levar junto a leitura, a transcrição e o diálogo.
+  editFail: 'The editor did not load. Back to reading, and try again.',
 
   preparing: 'Preparing…',
   preparingScreen: 'Waiting for the screen capture…',
@@ -264,6 +368,27 @@ export const pt: Strings = {
 
   copy: 'Copiar a transcrição',
   copied: 'Copiado',
+  transcriptClean: 'Texto limpo',
+  transcriptStamps: 'Com os tempos',
+  bold: 'Negrito',
+  italic: 'Itálico',
+  strike: 'Riscado',
+  bulletList: 'Lista',
+  orderedList: 'Lista numerada',
+  edited: 'editado por você',
+  saving: 'guardando…',
+  restoreClean: 'Voltar ao texto limpo',
+  restoreConfirm: 'Descartar o que você editou e voltar ao texto limpo?',
+  sweep: 'Varrer: decisões, tarefas e pendências',
+  sweeping: 'varrendo…',
+  sweepDecisions: 'ficou decidido',
+  sweepTasks: 'pra fazer',
+  sweepOpen: 'em aberto',
+  sweepEmpty: 'não tem nada pra agir nesta aqui',
+  sweepAgain: 'Varrer de novo',
+  sweepClear: 'Apagar a varredura',
+  sweepFail: (err) => `A varredura falhou: ${err}`,
+  sweepEngine: (engine) => `varrido por ${engine}`,
   downloadMp3: 'Baixar o .mp3',
   downloadMp4: 'Baixar o .mp4',
   remove: 'Apagar a sessão',
@@ -280,6 +405,15 @@ export const pt: Strings = {
   yesterday: 'ontem',
 
   teachTitle: 'pra ensinar ao whisper',
+  topTitle: 'mais ditas',
+  topHint: 'Contagem crua dos últimos 30 dias, sem artigo nem preposição.',
+  rareTitle: 'raras e suas',
+  rareHint: 'Palavra repetida dentro de poucas gravações. Isso é jargão de projeto, não vocabulário.',
+  ticsTitle: 'vícios de linguagem',
+  ticsHint: 'Por minuto de fala. É a única lista aqui que mede você, e não o modelo.',
+  statTitle: (word, n, sessions) => `${word}, ${n}× em ${sessions} sessões`,
+  ticTitle: (word, n, perMin) => `${word}, ${n}× no período, ${perMin} por minuto`,
+  panelEmpty: 'ainda não tem nada aqui',
   teachHint: 'Clique pra pôr na biblioteca: o modelo passa a escrever certo, e a correção conserta o que ele escrever parecido.',
   wordTitle: (word, n, sessions, proper, inLibrary) =>
     inLibrary
@@ -334,6 +468,27 @@ export const pt: Strings = {
   prev: 'Anterior',
   next: 'Próxima',
   size: (mb) => `${mb} MB`,
+  // ─── Quick edits ───
+  edit: 'Aparar e recortar',
+  editLeave: 'Voltar a ler',
+  aspect: 'proporção',
+  aspectFree: 'livre',
+  aspectOriginal: 'original',
+  playRange: 'Tocar o trecho',
+  rangeLine: (from, to, dur) => `${from} → ${to}  (${dur})`,
+  saveClip: 'Salvar o corte',
+  savingClip: 'cortando…',
+  clipFail: (err) => `O corte falhou: ${err}`,
+  clipFrom: 'corte',
+  waveLoading: 'lendo a onda…',
+  waveFail: 'Sem onda pra esta — dá pra marcar o trecho na mão do mesmo jeito.',
+  dragToTrim: 'Arraste as bordas pra escolher o trecho',
+  cropArea: 'Recorte — as setas movem',
+  cropNW: 'Puxar pelo canto de cima à esquerda', cropN: 'Puxar por cima',
+  cropNE: 'Puxar pelo canto de cima à direita', cropE: 'Puxar pela direita',
+  cropSE: 'Puxar pelo canto de baixo à direita', cropS: 'Puxar por baixo',
+  cropSW: 'Puxar pelo canto de baixo à esquerda', cropW: 'Puxar pela esquerda',
+  editFail: 'O editor não carregou. Volte a ler e tente de novo.',
 
   preparing: 'Preparando…',
   preparingScreen: 'Esperando a captura da tela…',
